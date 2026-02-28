@@ -2,6 +2,8 @@ import asyncio
 import os
 import httpx
 from fastapi import FastAPI, Query, HTTPException
+from pydantic import BaseModel
+from openai import AsyncOpenAI
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -12,6 +14,12 @@ GOOGLE_BOOKS_API_URL = "https://www.googleapis.com/books/v1/volumes"
 GOOGLE_BOOKS_API_KEY = os.getenv("GOOGLE_BOOKS_API_KEY")
 
 OPEN_LIBRARY_SEARCH_URL = "https://openlibrary.org/search.json"
+
+openai_client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+
+class ConceptRequest(BaseModel):
+    concept: str
 
 
 @app.get("/health")
@@ -74,6 +82,37 @@ async def fetch_open_library(client: httpx.AsyncClient, q: str) -> list:
             "link": None,
         })
     return books
+
+
+@app.post("/analyze")
+async def analyze_concept(body: ConceptRequest):
+    if not body.concept.strip():
+        raise HTTPException(status_code=400, detail="Concept cannot be empty")
+
+    prompt = f"""You are a book market analyst. A writer has described their book concept below.
+
+Extract the following and respond in JSON only, no extra text:
+{{
+  "genre": "primary genre",
+  "subgenre": "subgenre or null",
+  "themes": ["theme1", "theme2", "theme3"],
+  "target_audience": "description of the target reader",
+  "search_queries": ["query1", "query2"]
+}}
+
+The search_queries should be short, specific phrases optimized for finding similar published books.
+
+Concept: {body.concept}"""
+
+    response = await openai_client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": prompt}],
+        response_format={"type": "json_object"},
+    )
+
+    import json
+    analysis = json.loads(response.choices[0].message.content)
+    return {"concept": body.concept, "analysis": analysis}
 
 
 @app.get("/search")
