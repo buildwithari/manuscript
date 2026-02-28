@@ -312,6 +312,15 @@ Evaluate the concept across three dimensions:
    - Mid score (4–7): some overlap with existing works, refinement needed
    - Low score (1–3): concept is very close to what already exists
 
+4. comp_pitch — a single comparable pitch line a writer could use in a query letter.
+   - Format: "Think [Title A] meets [Title B]" or "For fans of [Title A] and [Title B]"
+   - Use exactly two titles. Prefer well-known, widely-read books a literary agent would recognise.
+   - Draw from the comparable titles list above, but substitute a more prominent title if the search results are obscure.
+
+5. query_hook — a 2-3 sentence query letter opening paragraph.
+   - Hook a literary agent with the core premise, the protagonist's situation, the central conflict, and what makes this concept fresh.
+   - Write in present tense, active voice. Do not mention the author or title. Keep it under 80 words.
+
 Use the actual market data. Do not guess or default to middle values.
 
 Respond in JSON only:
@@ -320,7 +329,9 @@ Respond in JSON only:
   "audience_enthusiasm": "High" | "Moderate" | "Low",
   "differentiation_score": <integer 1-10>,
   "reasoning": "2-3 sentences citing specific signals from the market data",
-  "recommendations": ["specific suggestion 1", "specific suggestion 2", "specific suggestion 3"]
+  "recommendations": ["specific suggestion 1", "specific suggestion 2", "specific suggestion 3"],
+  "comp_pitch": "Think [X] meets [Y]",
+  "query_hook": "2-3 sentence query letter opening"
 }}"""
 
     scoring_response = await openai_client.chat.completions.create(

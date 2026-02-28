@@ -19,6 +19,7 @@ interface Confidence {
   differentiation_score: number;
   reasoning: string;
   recommendations: string[];
+  comp_pitch?: string;
 }
 
 interface Book {
@@ -316,6 +317,13 @@ export default function Home() {
                     </div>
                   </div>
                 </div>
+
+                {result.confidence.comp_pitch && (
+                  <div className="bg-parchment border border-border rounded-xl px-5 py-4">
+                    <p className="text-xs text-ink-muted uppercase tracking-widest mb-1.5">Comp pitch</p>
+                    <p className="font-serif text-ink text-lg italic">{result.confidence.comp_pitch}</p>
+                  </div>
+                )}
 
                 <div>
                   <p className="text-xs text-ink-muted uppercase tracking-widest mb-3">Analysis</p>
