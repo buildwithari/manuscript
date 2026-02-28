@@ -1,7 +1,9 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import Image from "next/image";
+import { supabase } from "../lib/supabase";
 
 interface Analysis {
   genre: string;
@@ -76,12 +78,46 @@ const enthusiasmColors: Record<string, string> = {
 };
 
 export default function Home() {
+  const router = useRouter();
+
   const [concept, setConcept] = useState("");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ResearchResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [authMode, setAuthMode] = useState<"signin" | "signup">("signin");
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [authLoading, setAuthLoading] = useState(false);
+
   const toolRef = useRef<HTMLElement>(null);
+
+  // Redirect to dashboard if already signed in
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_, s) => {
+      if (s) router.replace("/dashboard");
+    });
+    return () => subscription.unsubscribe();
+  }, [router]);
+
+  const handleSignIn = async () => {
+    setAuthLoading(true);
+    setAuthError(null);
+    const { error } = await supabase.auth.signInWithPassword({ email: authEmail, password: authPassword });
+    if (error) setAuthError(error.message);
+    // on success, onAuthStateChange fires and redirects to /dashboard
+    setAuthLoading(false);
+  };
+
+  const handleSignUp = async () => {
+    setAuthLoading(true);
+    setAuthError(null);
+    const { error } = await supabase.auth.signUp({ email: authEmail, password: authPassword });
+    if (error) setAuthError(error.message);
+    setAuthLoading(false);
+  };
 
   const scrollToTool = () => {
     toolRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -99,8 +135,7 @@ export default function Home() {
         body: JSON.stringify({ concept }),
       });
       if (!res.ok) throw new Error("Backend error");
-      const data = await res.json();
-      setResult(data);
+      setResult(await res.json());
     } catch {
       setError("Something went wrong. Make sure the backend is running.");
     } finally {
@@ -116,12 +151,20 @@ export default function Home() {
           <span className="font-serif font-bold text-ink text-lg tracking-tight">
             Manuscript
           </span>
-          <button
-            onClick={scrollToTool}
-            className="text-sm text-ink-muted hover:text-ink transition-colors"
-          >
-            Try it →
-          </button>
+          <div className="flex items-center gap-5">
+            <button
+              onClick={scrollToTool}
+              className="text-sm text-ink-muted hover:text-ink transition-colors"
+            >
+              Try it →
+            </button>
+            <button
+              onClick={() => { setAuthMode("signin"); setShowAuthModal(true); }}
+              className="text-sm text-ink-muted hover:text-ink transition-colors"
+            >
+              Sign in →
+            </button>
+          </div>
         </div>
       </nav>
 
@@ -154,12 +197,7 @@ export default function Home() {
           <div className="mt-16 grid grid-cols-2 md:grid-cols-3 gap-4">
             {["/image1.jpg", "/image2.jpg", "/image3.jpg"].map((src, i) => (
               <div key={i} className="relative aspect-[4/3] rounded-2xl overflow-hidden border border-border">
-                <Image
-                  src={src}
-                  alt=""
-                  fill
-                  className="object-cover"
-                />
+                <Image src={src} alt="" fill className="object-cover" />
               </div>
             ))}
           </div>
@@ -187,22 +225,17 @@ export default function Home() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {features.map((f) => (
-              <div
-                key={f.title}
-                className="p-7 rounded-2xl border border-border bg-parchment"
-              >
+              <div key={f.title} className="p-7 rounded-2xl border border-border bg-parchment">
                 <div className="w-2 h-2 rounded-full bg-sage mb-5" />
                 <h3 className="font-serif text-xl text-ink mb-3">{f.title}</h3>
-                <p className="text-ink-muted text-sm leading-relaxed">
-                  {f.description}
-                </p>
+                <p className="text-ink-muted text-sm leading-relaxed">{f.description}</p>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* Tool */}
+      {/* Tool — guest preview */}
       <section ref={toolRef} className="py-24 px-6">
         <div className="max-w-5xl mx-auto">
           <div className="max-w-xl mb-12">
@@ -276,10 +309,7 @@ export default function Home() {
                     <div className="flex items-center gap-2">
                       <div className="flex gap-0.5">
                         {Array.from({ length: 10 }).map((_, i) => (
-                          <div
-                            key={i}
-                            className={`w-4 h-4 rounded-sm ${i < result.confidence.differentiation_score ? "bg-sage" : "bg-border"}`}
-                          />
+                          <div key={i} className={`w-4 h-4 rounded-sm ${i < result.confidence.differentiation_score ? "bg-sage" : "bg-border"}`} />
                         ))}
                       </div>
                       <span className="text-xs text-ink-muted">{result.confidence.differentiation_score}/10</span>
@@ -305,11 +335,9 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Analysis */}
+              {/* Concept analysis */}
               <div className="bg-surface border border-border rounded-2xl p-8">
-                <p className="text-xs text-ink-muted uppercase tracking-widest mb-6">
-                  Concept analysis
-                </p>
+                <p className="text-xs text-ink-muted uppercase tracking-widest mb-6">Concept analysis</p>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
                   <div>
                     <p className="text-xs text-ink-muted mb-1">Genre</p>
@@ -326,12 +354,7 @@ export default function Home() {
                     <p className="text-xs text-ink-muted mb-2">Themes</p>
                     <div className="flex flex-wrap gap-2">
                       {result.analysis.themes.map((t) => (
-                        <span
-                          key={t}
-                          className="bg-sage-light text-sage-dark text-xs px-3 py-1 rounded-full"
-                        >
-                          {t}
-                        </span>
+                        <span key={t} className="bg-sage-light text-sage-dark text-xs px-3 py-1 rounded-full">{t}</span>
                       ))}
                     </div>
                   </div>
@@ -345,20 +368,10 @@ export default function Home() {
                 </p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {result.books.slice(0, 10).map((book, i) => (
-                    <div
-                      key={i}
-                      className="bg-surface border border-border rounded-xl p-5 flex gap-4"
-                    >
-                      {/* Book cover */}
+                    <div key={i} className="bg-surface border border-border rounded-xl p-5 flex gap-4">
                       <div className="w-12 h-16 rounded-md bg-parchment border border-border shrink-0 overflow-hidden">
                         {book.thumbnail ? (
-                          <Image
-                            src={book.thumbnail}
-                            alt={book.title || ""}
-                            width={48}
-                            height={64}
-                            className="object-cover w-full h-full"
-                          />
+                          <Image src={book.thumbnail} alt={book.title || ""} width={48} height={64} className="object-cover w-full h-full" />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center">
                             <span className="text-border text-lg">📖</span>
@@ -366,26 +379,16 @@ export default function Home() {
                         )}
                       </div>
                       <div className="min-w-0">
-                        <p className="text-ink font-medium text-sm leading-snug truncate">
-                          {book.title || "Untitled"}
-                        </p>
-                        <p className="text-ink-muted text-xs mt-0.5 truncate">
-                          {book.authors.join(", ") || "Unknown author"}
-                        </p>
+                        <p className="text-ink font-medium text-sm leading-snug truncate">{book.title || "Untitled"}</p>
+                        <p className="text-ink-muted text-xs mt-0.5 truncate">{book.authors.join(", ") || "Unknown author"}</p>
                         <div className="flex items-center gap-3 mt-2 flex-wrap">
                           {book.rating && (
                             <span className="text-xs text-ink-muted">
                               ★ {book.rating.toFixed(1)}
-                              {book.ratings_count && (
-                                <span className="ml-1 opacity-60">({book.ratings_count.toLocaleString()})</span>
-                              )}
+                              {book.ratings_count && <span className="ml-1 opacity-60">({book.ratings_count.toLocaleString()})</span>}
                             </span>
                           )}
-                          {book.edition_count && (
-                            <span className="text-xs text-ink-muted">
-                              {book.edition_count} editions
-                            </span>
-                          )}
+                          {book.edition_count && <span className="text-xs text-ink-muted">{book.edition_count} editions</span>}
                           <span className="text-xs px-2 py-0.5 rounded-full bg-sage-light text-sage-dark">
                             {book.source === "google_books" ? "Google Books" : "Open Library"}
                           </span>
@@ -395,10 +398,89 @@ export default function Home() {
                   ))}
                 </div>
               </div>
+
+              {/* CTA to sign up */}
+              <div className="bg-sage-light border border-sage rounded-2xl p-8 text-center">
+                <p className="font-serif text-2xl text-ink mb-3">Save your research.</p>
+                <p className="text-ink-muted text-sm mb-6 max-w-sm mx-auto">
+                  Create an account to save your analyses, track concept evolution, and revisit your work anytime.
+                </p>
+                <button
+                  onClick={() => { setAuthMode("signup"); setShowAuthModal(true); }}
+                  className="inline-flex items-center gap-2 bg-ink text-parchment px-6 py-3 rounded-full text-sm font-medium hover:bg-sage-dark transition-colors"
+                >
+                  Create free account →
+                </button>
+              </div>
             </div>
           )}
         </div>
       </section>
+
+      {/* Auth modal */}
+      {showAuthModal && (
+        <div className="fixed inset-0 z-50 bg-ink/40 backdrop-blur-sm flex items-center justify-center px-6">
+          <div className="bg-parchment rounded-2xl border border-border w-full max-w-sm p-8">
+            <div className="flex items-center justify-between mb-8">
+              <h2 className="font-serif text-2xl text-ink">
+                {authMode === "signin" ? "Sign in" : "Create account"}
+              </h2>
+              <button
+                onClick={() => { setShowAuthModal(false); setAuthError(null); }}
+                className="text-ink-muted hover:text-ink transition-colors text-lg leading-none"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs text-ink-muted uppercase tracking-widest block mb-2">Email</label>
+                <input
+                  type="email"
+                  value={authEmail}
+                  onChange={(e) => setAuthEmail(e.target.value)}
+                  className="w-full bg-surface border border-border rounded-xl px-4 py-3 text-ink text-sm focus:outline-none focus:border-sage"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-ink-muted uppercase tracking-widest block mb-2">Password</label>
+                <input
+                  type="password"
+                  value={authPassword}
+                  onChange={(e) => setAuthPassword(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && (authMode === "signin" ? handleSignIn() : handleSignUp())}
+                  className="w-full bg-surface border border-border rounded-xl px-4 py-3 text-ink text-sm focus:outline-none focus:border-sage"
+                />
+              </div>
+            </div>
+
+            {authError && (
+              <p className="mt-4 text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl px-4 py-2.5">
+                {authError}
+              </p>
+            )}
+
+            <button
+              onClick={authMode === "signin" ? handleSignIn : handleSignUp}
+              disabled={authLoading || !authEmail.trim() || !authPassword.trim()}
+              className="w-full mt-6 bg-ink text-parchment py-3 rounded-full text-sm font-medium disabled:opacity-40 hover:bg-sage-dark transition-colors"
+            >
+              {authLoading ? "…" : authMode === "signin" ? "Sign in" : "Create account"}
+            </button>
+
+            <p className="text-center text-xs text-ink-muted mt-5">
+              {authMode === "signin" ? "No account? " : "Already have one? "}
+              <button
+                onClick={() => { setAuthMode(authMode === "signin" ? "signup" : "signin"); setAuthError(null); }}
+                className="text-sage hover:underline"
+              >
+                {authMode === "signin" ? "Sign up" : "Sign in"}
+              </button>
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Footer */}
       <footer className="border-t border-border py-8 px-6">

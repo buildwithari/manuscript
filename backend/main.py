@@ -2,10 +2,13 @@ import asyncio
 import json
 import os
 import httpx
-from fastapi import FastAPI, Query, HTTPException
+from typing import Optional
+from fastapi import FastAPI, Query, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 from openai import AsyncOpenAI
+from supabase import create_client, Client
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -26,9 +29,40 @@ OPEN_LIBRARY_SEARCH_URL = "https://openlibrary.org/search.json"
 
 openai_client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
+supabase: Client = create_client(
+    os.getenv("SUPABASE_URL"),
+    os.getenv("SUPABASE_SERVICE_KEY"),
+)
+
+bearer_scheme = HTTPBearer()
+optional_bearer_scheme = HTTPBearer(auto_error=False)
+
+
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme)) -> str:
+    try:
+        response = supabase.auth.get_user(credentials.credentials)
+        return response.user.id
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+
+async def get_optional_user(credentials: Optional[HTTPAuthorizationCredentials] = Depends(optional_bearer_scheme)) -> Optional[str]:
+    if credentials is None:
+        return None
+    try:
+        response = supabase.auth.get_user(credentials.credentials)
+        return response.user.id
+    except Exception:
+        return None
+
 
 class ConceptRequest(BaseModel):
     concept: str
+    project_id: Optional[str] = None
+
+
+class ProjectRequest(BaseModel):
+    title: str
 
 
 @app.get("/health")
@@ -68,7 +102,7 @@ async def fetch_open_library(client: httpx.AsyncClient, q: str) -> list:
     params = {
         "q": q,
         "limit": 10,
-        "fields": "title,author_name,first_publish_year,edition_count,ratings_average,ratings_count,subject,cover_i",
+        "fields": "title,author_name,first_publish_year,edition_count,ratings_average,ratings_count,subject,cover_i,key",
     }
 
     response = await client.get(OPEN_LIBRARY_SEARCH_URL, params=params)
@@ -88,7 +122,7 @@ async def fetch_open_library(client: httpx.AsyncClient, q: str) -> list:
             "ratings_count": doc.get("ratings_count"),
             "edition_count": doc.get("edition_count"),
             "thumbnail": f"https://covers.openlibrary.org/b/id/{doc['cover_i']}-M.jpg" if doc.get("cover_i") else None,
-            "link": None,
+            "link": f"https://openlibrary.org{doc['key']}" if doc.get("key") else None,
         })
     return books
 
@@ -146,7 +180,7 @@ def deduplicate_books(books: list) -> list:
 
 
 @app.post("/research")
-async def research_concept(body: ConceptRequest):
+async def research_concept(body: ConceptRequest, user_id: Optional[str] = Depends(get_optional_user)):
     if not body.concept.strip():
         raise HTTPException(status_code=400, detail="Concept cannot be empty")
 
@@ -155,6 +189,7 @@ async def research_concept(body: ConceptRequest):
 
 Extract the following and respond in JSON only, no extra text:
 {{
+  "title": "3-5 word working title for this project (evocative, not generic)",
   "genre": "primary genre",
   "subgenre": "subgenre or null",
   "themes": ["theme1", "theme2", "theme3"],
@@ -173,6 +208,18 @@ Concept: {body.concept}"""
     )
     analysis = json.loads(openai_response.choices[0].message.content)
 
+    # Auto-create a project if the user is authenticated but hasn't selected one yet
+    saved_project_id = body.project_id
+    saved_project_title = None
+    if user_id and not body.project_id:
+        auto_title = analysis.get("title") or body.concept[:50]
+        new_project = supabase.table("projects").insert({
+            "user_id": user_id,
+            "title": auto_title,
+        }).execute()
+        saved_project_id = new_project.data[0]["id"]
+        saved_project_title = new_project.data[0]["title"]
+
     # Step 2: search both APIs for each query in parallel
     queries = analysis.get("search_queries", [])
     async with httpx.AsyncClient() as client:
@@ -185,6 +232,30 @@ Concept: {body.concept}"""
 
     all_books = [book for batch in results for book in batch]
     books = deduplicate_books(all_books)
+
+    # Step 2.5: fetch prior sessions for this project to provide evolution context
+    history_context = ""
+    if saved_project_id and user_id:
+        prev = (
+            supabase.table("sessions")
+            .select("concept, confidence, created_at")
+            .eq("project_id", saved_project_id)
+            .order("created_at", desc=False)
+            .limit(3)
+            .execute()
+        )
+        if prev.data:
+            lines = []
+            for i, s in enumerate(prev.data, 1):
+                conf = s.get("confidence") or {}
+                snippet = s["concept"][:200].replace("\n", " ")
+                lines.append(
+                    f"Iteration {i}: \"{snippet}\" → "
+                    f"Market: {conf.get('market_category', 'N/A')}, "
+                    f"Enthusiasm: {conf.get('audience_enthusiasm', 'N/A')}, "
+                    f"Differentiation: {conf.get('differentiation_score', 'N/A')}/10"
+                )
+            history_context = "\n\nConcept evolution (previous iterations by this writer on this project):\n" + "\n".join(lines)
 
     # Step 3: score the concept based on analysis + comparable books
     rated_books = [b for b in books if b["rating"] is not None]
@@ -222,7 +293,7 @@ Market stats from comparable books:
 {json.dumps(market_stats, indent=2)}
 
 Sample comparable titles:
-{json.dumps(book_summary, indent=2)}
+{json.dumps(book_summary, indent=2)}{history_context}
 
 Evaluate the concept across three dimensions:
 
@@ -259,9 +330,79 @@ Respond in JSON only:
     )
     confidence = json.loads(scoring_response.choices[0].message.content)
 
+    # Save session to DB if we have a project (either passed in or auto-created)
+    if saved_project_id and user_id:
+        supabase.table("sessions").insert({
+            "project_id": saved_project_id,
+            "concept": body.concept,
+            "analysis": analysis,
+            "confidence": confidence,
+            "books": books[:15],
+        }).execute()
+
     return {
         "concept": body.concept,
         "analysis": analysis,
         "confidence": confidence,
         "books": books,
+        "project_id": saved_project_id,
+        "project_title": saved_project_title,
     }
+
+
+# --- Project endpoints ---
+
+@app.post("/projects")
+async def create_project(body: ProjectRequest, user_id: str = Depends(get_current_user)):
+    response = supabase.table("projects").insert({
+        "user_id": user_id,
+        "title": body.title,
+    }).execute()
+    return response.data[0]
+
+
+@app.get("/projects")
+async def list_projects(user_id: str = Depends(get_current_user)):
+    response = (
+        supabase.table("projects")
+        .select("*")
+        .eq("user_id", user_id)
+        .order("created_at", desc=True)
+        .execute()
+    )
+    return response.data
+
+
+@app.get("/projects/{project_id}")
+async def get_project(project_id: str, user_id: str = Depends(get_current_user)):
+    response = (
+        supabase.table("projects")
+        .select("*, sessions(*)")
+        .eq("id", project_id)
+        .eq("user_id", user_id)
+        .maybe_single()
+        .execute()
+    )
+    if response.data is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return response.data
+
+
+@app.patch("/projects/{project_id}")
+async def rename_project(project_id: str, body: ProjectRequest, user_id: str = Depends(get_current_user)):
+    response = (
+        supabase.table("projects")
+        .update({"title": body.title})
+        .eq("id", project_id)
+        .eq("user_id", user_id)
+        .execute()
+    )
+    if not response.data:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return response.data[0]
+
+
+@app.delete("/projects/{project_id}")
+async def delete_project(project_id: str, user_id: str = Depends(get_current_user)):
+    supabase.table("projects").delete().eq("id", project_id).eq("user_id", user_id).execute()
+    return {"ok": True}
