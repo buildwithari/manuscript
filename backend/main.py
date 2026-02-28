@@ -1,4 +1,5 @@
 import asyncio
+import json
 import os
 import httpx
 from fastapi import FastAPI, Query, HTTPException
@@ -110,7 +111,6 @@ Concept: {body.concept}"""
         response_format={"type": "json_object"},
     )
 
-    import json
     analysis = json.loads(response.choices[0].message.content)
     return {"concept": body.concept, "analysis": analysis}
 
@@ -124,3 +124,58 @@ async def search_books(q: str = Query(..., min_length=1)):
         )
 
     return {"query": q, "results": google_results + ol_results}
+
+
+def deduplicate_books(books: list) -> list:
+    seen = set()
+    unique = []
+    for book in books:
+        key = (book["title"] or "").lower().strip()
+        if key and key not in seen:
+            seen.add(key)
+            unique.append(book)
+    return unique
+
+
+@app.post("/research")
+async def research_concept(body: ConceptRequest):
+    if not body.concept.strip():
+        raise HTTPException(status_code=400, detail="Concept cannot be empty")
+
+    # Step 1: analyze the concept
+    prompt = f"""You are a book market analyst. A writer has described their book concept below.
+
+Extract the following and respond in JSON only, no extra text:
+{{
+  "genre": "primary genre",
+  "subgenre": "subgenre or null",
+  "themes": ["theme1", "theme2", "theme3"],
+  "target_audience": "description of the target reader",
+  "search_queries": ["query1", "query2"]
+}}
+
+The search_queries should be short, specific phrases optimized for finding similar published books.
+
+Concept: {body.concept}"""
+
+    openai_response = await openai_client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": prompt}],
+        response_format={"type": "json_object"},
+    )
+    analysis = json.loads(openai_response.choices[0].message.content)
+
+    # Step 2: search both APIs for each query in parallel
+    queries = analysis.get("search_queries", [])
+    async with httpx.AsyncClient() as client:
+        tasks = [
+            coro
+            for q in queries
+            for coro in (fetch_google_books(client, q), fetch_open_library(client, q))
+        ]
+        results = await asyncio.gather(*tasks)
+
+    all_books = [book for batch in results for book in batch]
+    books = deduplicate_books(all_books)
+
+    return {"concept": body.concept, "analysis": analysis, "books": books}
