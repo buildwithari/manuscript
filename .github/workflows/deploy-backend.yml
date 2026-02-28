@@ -10,6 +10,7 @@ on:
       - "backend/**"
       - "infra/**"
       - ".github/workflows/deploy-backend.yml"
+  workflow_dispatch:  # allows manual runs from the GitHub Actions UI
 
 jobs:
   # ---------------------------------------------------------------------------
