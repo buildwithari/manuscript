@@ -1,3 +1,4 @@
+import asyncio
 import os
 import httpx
 from fastapi import FastAPI, Query, HTTPException
@@ -18,24 +19,20 @@ def health():
     return {"status": "ok"}
 
 
-@app.get("/search")
-async def search_books(q: str = Query(..., min_length=1)):
+async def fetch_google_books(client: httpx.AsyncClient, q: str) -> list:
     params = {"q": q, "maxResults": 10, "printType": "books"}
     if GOOGLE_BOOKS_API_KEY:
         params["key"] = GOOGLE_BOOKS_API_KEY
 
-    async with httpx.AsyncClient() as client:
-        response = await client.get(GOOGLE_BOOKS_API_URL, params=params)
-
+    response = await client.get(GOOGLE_BOOKS_API_URL, params=params)
     if response.status_code != 200:
-        raise HTTPException(status_code=502, detail="Google Books API error")
-
-    items = response.json().get("items", [])
+        return []
 
     books = []
-    for item in items:
+    for item in response.json().get("items", []):
         info = item.get("volumeInfo", {})
         books.append({
+            "source": "google_books",
             "title": info.get("title"),
             "authors": info.get("authors", []),
             "description": info.get("description"),
@@ -43,35 +40,48 @@ async def search_books(q: str = Query(..., min_length=1)):
             "categories": info.get("categories", []),
             "rating": info.get("averageRating"),
             "ratings_count": info.get("ratingsCount"),
+            "edition_count": None,
             "thumbnail": info.get("imageLinks", {}).get("thumbnail"),
             "link": info.get("infoLink"),
         })
+    return books
 
-    return {"query": q, "results": books}
 
+async def fetch_open_library(client: httpx.AsyncClient, q: str) -> list:
+    params = {
+        "q": q,
+        "limit": 10,
+        "fields": "title,author_name,first_publish_year,edition_count,ratings_average,ratings_count,subject",
+    }
 
-@app.get("/search/openlibrary")
-async def search_openlibrary(q: str = Query(..., min_length=1)):
-    params = {"q": q, "limit": 10, "fields": "title,author_name,first_publish_year,edition_count,ratings_average,ratings_count,subject"}
-
-    async with httpx.AsyncClient() as client:
-        response = await client.get(OPEN_LIBRARY_SEARCH_URL, params=params)
-
+    response = await client.get(OPEN_LIBRARY_SEARCH_URL, params=params)
     if response.status_code != 200:
-        raise HTTPException(status_code=502, detail="Open Library API error")
-
-    docs = response.json().get("docs", [])
+        return []
 
     books = []
-    for doc in docs:
+    for doc in response.json().get("docs", []):
         books.append({
+            "source": "open_library",
             "title": doc.get("title"),
             "authors": doc.get("author_name", []),
-            "first_publish_year": doc.get("first_publish_year"),
-            "edition_count": doc.get("edition_count"),
+            "description": None,
+            "published_date": str(doc["first_publish_year"]) if doc.get("first_publish_year") else None,
+            "categories": doc.get("subject", [])[:5],
             "rating": doc.get("ratings_average"),
             "ratings_count": doc.get("ratings_count"),
-            "subjects": doc.get("subject", [])[:5],
+            "edition_count": doc.get("edition_count"),
+            "thumbnail": None,
+            "link": None,
         })
+    return books
 
-    return {"query": q, "results": books}
+
+@app.get("/search")
+async def search_books(q: str = Query(..., min_length=1)):
+    async with httpx.AsyncClient() as client:
+        google_results, ol_results = await asyncio.gather(
+            fetch_google_books(client, q),
+            fetch_open_library(client, q),
+        )
+
+    return {"query": q, "results": google_results + ol_results}
