@@ -17,7 +17,11 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=[
+        "http://localhost:3000",
+        "https://manuscript-ebon.vercel.app",
+        "https://manuscript.help",
+    ],
     allow_methods=["*"],
     allow_headers=["*"],
 )

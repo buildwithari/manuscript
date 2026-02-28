@@ -11,3 +11,4 @@ frontend/.next/
 # Misc
 .DS_Store
 PLAN.md
+deployment.md
