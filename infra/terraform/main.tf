@@ -67,7 +67,7 @@ resource "aws_security_group" "alb" {
   vpc_id      = data.aws_vpc.default.id
 
   ingress {
-    description = "HTTP — redirected to HTTPS by the ALB listener"
+    description = "HTTP - redirected to HTTPS by the ALB listener"
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
