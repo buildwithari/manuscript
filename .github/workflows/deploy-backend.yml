@@ -1,0 +1,107 @@
+name: Deploy Backend
+
+# Triggers on every push to main (i.e. merged PRs).
+# Builds a new AMI with Packer, then applies Terraform to deploy it.
+on:
+  push:
+    branches: [main]
+    paths:
+      # Only run when backend code or infra config changes
+      - "backend/**"
+      - "infra/**"
+      - ".github/workflows/deploy-backend.yml"
+  workflow_dispatch:  # allows manual runs from the GitHub Actions UI
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Job 1 — Bake AMI with Packer
+  # ---------------------------------------------------------------------------
+  packer:
+    name: Build AMI
+    runs-on: ubuntu-latest
+
+    outputs:
+      ami_id: ${{ steps.parse_ami.outputs.ami_id }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Install Packer
+        uses: hashicorp/setup-packer@main
+        with:
+          version: "latest"
+
+      - name: Packer init
+        working-directory: infra/packer
+        run: packer init manuscript.pkr.hcl
+
+      - name: Packer build
+        id: packer_build
+        working-directory: .  # run from repo root so file provisioner paths resolve
+        run: |
+          packer build -machine-readable infra/packer/manuscript.pkr.hcl \
+            | tee /tmp/packer_output.txt
+
+      - name: Parse AMI ID from Packer output
+        id: parse_ami
+        run: |
+          # machine-readable output has a line like:
+          # <timestamp>,amazon-ebs.ubuntu,artifact,0,id,us-east-1:ami-0abc1234567890
+          AMI_ID=$(grep 'artifact,0,id' /tmp/packer_output.txt \
+            | awk -F',' '{print $NF}' \
+            | cut -d: -f2 \
+            | tr -d '[:space:]')
+          echo "Parsed AMI ID: $AMI_ID"
+          echo "ami_id=$AMI_ID" >> "$GITHUB_OUTPUT"
+
+  # ---------------------------------------------------------------------------
+  # Job 2 — Apply Terraform with the new AMI ID
+  # ---------------------------------------------------------------------------
+  terraform:
+    name: Deploy Infrastructure
+    runs-on: ubuntu-latest
+    needs: packer  # waits for Job 1 and inherits its outputs
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Install Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.6"
+
+      - name: Terraform init
+        working-directory: infra/terraform
+        run: terraform init
+
+      - name: Terraform validate
+        working-directory: infra/terraform
+        run: terraform validate
+
+      - name: Terraform apply
+        working-directory: infra/terraform
+        run: |
+          terraform apply -auto-approve \
+            -var="ami_id=${{ needs.packer.outputs.ami_id }}"
+        # ami_id is the only var that changes per deploy.
+        # Everything else uses defaults defined in variables.tf.
+
+      - name: Print outputs
+        working-directory: infra/terraform
+        run: terraform output
