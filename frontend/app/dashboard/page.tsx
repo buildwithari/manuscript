@@ -149,7 +149,7 @@ export default function Dashboard() {
   }, [messages]);
 
   const fetchProjects = async (token: string) => {
-    const res = await fetch("http://localhost:8000/projects", {
+    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/projects`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (res.ok) setProjects(await res.json());
@@ -160,7 +160,7 @@ export default function Dashboard() {
     setMessages([]);
     setError(null);
     if (!session) return;
-    const res = await fetch(`http://localhost:8000/projects/${project.id}`, {
+    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/projects/${project.id}`, {
       headers: { Authorization: `Bearer ${session.access_token}` },
     });
     if (res.ok) {
@@ -186,7 +186,7 @@ export default function Dashboard() {
     setError(null);
 
     try {
-      const res = await fetch("http://localhost:8000/research", {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/research`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -230,7 +230,7 @@ export default function Dashboard() {
       setEditingId(null);
       return;
     }
-    const res = await fetch(`http://localhost:8000/projects/${project.id}`, {
+    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/projects/${project.id}`, {
       method: "PATCH",
       headers: {
         "Content-Type": "application/json",
@@ -248,7 +248,7 @@ export default function Dashboard() {
 
   const handleDelete = async (project: Project) => {
     if (!session) return;
-    await fetch(`http://localhost:8000/projects/${project.id}`, {
+    await fetch(`${process.env.NEXT_PUBLIC_API_URL}/projects/${project.id}`, {
       method: "DELETE",
       headers: { Authorization: `Bearer ${session.access_token}` },
     });

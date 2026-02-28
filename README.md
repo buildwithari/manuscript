@@ -4,6 +4,8 @@ Manuscript helps writers validate their book ideas before they invest months bri
 
 Describe your concept and Manuscript researches the market — finding comparable published books, assessing how crowded the space is, how enthusiastic readers are, and how much room exists for a fresh take. You get a market assessment, a comp pitch, a query letter hook, and actionable recommendations to strengthen your idea before you start writing.
 
+**Live at [manuscript.help](https://manuscript.help)**
+
 ---
 
 ## Features
@@ -42,7 +44,33 @@ Describe your concept and Manuscript researches the market — finding comparabl
 | AI | OpenAI `gpt-4o-mini` |
 | Book data | Google Books API, Open Library API, Hardcover API |
 | Auth + DB | Supabase (PostgreSQL + auth) |
-| Hosting (planned) | Vercel (frontend), AWS EC2 (backend) |
+| Hosting | Vercel (frontend), AWS EC2 behind ALB (backend) |
+| Infrastructure | Terraform + Packer |
+| CI/CD | GitHub Actions |
+
+---
+
+## Infrastructure & Deployment
+
+The backend is deployed on AWS using an immutable infrastructure approach.
+
+**How it works:**
+
+On every merge to `main` that touches `backend/` or `infra/`, GitHub Actions runs a two-job pipeline:
+
+1. **Packer** bakes a fresh AMI — launches a temporary EC2, installs Python 3.11, copies the backend code, installs dependencies, and registers a systemd service. App secrets are never baked in.
+2. **Terraform** applies the new AMI to the infrastructure — updates the Launch Template and triggers an Auto Scaling Group instance refresh, which brings up the new instance behind the ALB before terminating the old one (blue/green, near-zero downtime).
+
+**AWS resources managed by Terraform:**
+- Application Load Balancer with HTTPS (ACM certificate, HTTP→HTTPS redirect)
+- Auto Scaling Group (min/max 1) with instance refresh
+- EC2 security group (port 8000 from ALB only, no direct internet access)
+- IAM role with SSM Parameter Store access (secrets pulled at boot, never on disk)
+- Route 53 A record for `api.manuscript.help`
+
+**Secrets** are stored in AWS SSM Parameter Store under `/manuscript/backend/` and injected as systemd environment variables at instance boot via `boot.sh`.
+
+**Terraform state** is stored in S3 with DynamoDB locking.
 
 ---
 
@@ -108,6 +136,7 @@ Create `frontend/.env.local`:
 ```
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
+NEXT_PUBLIC_API_URL=http://localhost:8000
 ```
 
 Start the frontend:
@@ -138,7 +167,6 @@ The app runs at `http://localhost:3000`. The backend runs at `http://localhost:8
 
 ## What's next
 
-### Ideas in the pipeline
 - **Mobile layout** — the three-panel dashboard needs a responsive treatment for smaller screens
 - **Session notes** — let users annotate individual sessions with freeform notes
 - **Export improvements** — include the publication trend chart in the PDF export
