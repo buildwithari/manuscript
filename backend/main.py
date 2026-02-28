@@ -3,6 +3,7 @@ import json
 import os
 import httpx
 from fastapi import FastAPI, Query, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from openai import AsyncOpenAI
 from dotenv import load_dotenv
@@ -10,6 +11,13 @@ from dotenv import load_dotenv
 load_dotenv()
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 GOOGLE_BOOKS_API_URL = "https://www.googleapis.com/books/v1/volumes"
 GOOGLE_BOOKS_API_KEY = os.getenv("GOOGLE_BOOKS_API_KEY")
@@ -60,7 +68,7 @@ async def fetch_open_library(client: httpx.AsyncClient, q: str) -> list:
     params = {
         "q": q,
         "limit": 10,
-        "fields": "title,author_name,first_publish_year,edition_count,ratings_average,ratings_count,subject",
+        "fields": "title,author_name,first_publish_year,edition_count,ratings_average,ratings_count,subject,cover_i",
     }
 
     response = await client.get(OPEN_LIBRARY_SEARCH_URL, params=params)
@@ -79,7 +87,7 @@ async def fetch_open_library(client: httpx.AsyncClient, q: str) -> list:
             "rating": doc.get("ratings_average"),
             "ratings_count": doc.get("ratings_count"),
             "edition_count": doc.get("edition_count"),
-            "thumbnail": None,
+            "thumbnail": f"https://covers.openlibrary.org/b/id/{doc['cover_i']}-M.jpg" if doc.get("cover_i") else None,
             "link": None,
         })
     return books
@@ -179,10 +187,22 @@ Concept: {body.concept}"""
     books = deduplicate_books(all_books)
 
     # Step 3: score the concept based on analysis + comparable books
+    rated_books = [b for b in books if b["rating"] is not None]
+    avg_rating = round(sum(b["rating"] for b in rated_books) / len(rated_books), 2) if rated_books else None
+    avg_editions = round(sum(b["edition_count"] for b in books if b["edition_count"]) / max(len([b for b in books if b["edition_count"]]), 1), 1)
+    high_rated = len([b for b in rated_books if b["rating"] >= 4.0])
+
+    market_stats = {
+        "total_comparable_books": len(books),
+        "books_with_ratings": len(rated_books),
+        "average_rating": avg_rating,
+        "books_rated_4_or_above": high_rated,
+        "average_edition_count": avg_editions,
+    }
+
     book_summary = [
         {
             "title": b["title"],
-            "authors": b["authors"],
             "rating": b["rating"],
             "ratings_count": b["ratings_count"],
             "edition_count": b["edition_count"],
@@ -190,22 +210,45 @@ Concept: {body.concept}"""
         for b in books[:15]
     ]
 
-    scoring_prompt = f"""You are a book market analyst evaluating a writer's concept for market potential.
+    scoring_prompt = f"""You are a book market analyst evaluating a writer's concept.
 
 Concept: {body.concept}
 
-Analysis:
-- Genre: {analysis.get("genre")} / {analysis.get("subgenre")}
-- Themes: {", ".join(analysis.get("themes", []))}
-- Target audience: {analysis.get("target_audience")}
+Genre: {analysis.get("genre")} / {analysis.get("subgenre")}
+Themes: {", ".join(analysis.get("themes", []))}
+Target audience: {analysis.get("target_audience")}
 
-Comparable books found ({len(books)} total, showing top 15):
+Market stats from comparable books:
+{json.dumps(market_stats, indent=2)}
+
+Sample comparable titles:
 {json.dumps(book_summary, indent=2)}
 
-Based on the genre, themes, competition, and comparable book performance, respond in JSON only:
+Evaluate the concept across three dimensions:
+
+1. market_category — how crowded is this space?
+   - "Underserved Niche": few comparables, clear gap in the market
+   - "Competitive": healthy number of titles, readers exist but competition is real
+   - "Saturated": many titles, hard to stand out without strong differentiation
+
+2. audience_enthusiasm — how passionate are readers in this genre based on ratings and volume?
+   - "High": strong ratings (avg 4.0+) and/or large ratings counts
+   - "Moderate": mixed ratings or sparse data
+   - "Low": poor ratings or very little reader engagement found
+
+3. differentiation_score — on a scale of 1–10, how much room is there for a fresh take?
+   - High score (8–10): concept has a distinctive angle not well-covered by existing titles
+   - Mid score (4–7): some overlap with existing works, refinement needed
+   - Low score (1–3): concept is very close to what already exists
+
+Use the actual market data. Do not guess or default to middle values.
+
+Respond in JSON only:
 {{
-  "score": <integer 0-100>,
-  "reasoning": "2-3 sentences explaining the score based on market signals",
+  "market_category": "Underserved Niche" | "Competitive" | "Saturated",
+  "audience_enthusiasm": "High" | "Moderate" | "Low",
+  "differentiation_score": <integer 1-10>,
+  "reasoning": "2-3 sentences citing specific signals from the market data",
   "recommendations": ["specific suggestion 1", "specific suggestion 2", "specific suggestion 3"]
 }}"""
 
