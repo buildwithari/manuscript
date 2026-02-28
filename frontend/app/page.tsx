@@ -173,13 +173,13 @@ export default function Home() {
               onClick={scrollToTool}
               className="text-sm text-ink-muted hover:text-ink transition-colors"
             >
-              Try it →
+              Try Manuscript
             </button>
             <button
               onClick={() => { setAuthMode("signin"); setShowAuthModal(true); }}
-              className="text-sm text-ink-muted hover:text-ink transition-colors"
+              className="text-sm bg-sage text-parchment px-4 py-1.5 rounded-full hover:bg-sage-dark transition-colors"
             >
-              Sign in →
+              Sign in
             </button>
           </div>
         </div>
@@ -232,7 +232,7 @@ export default function Home() {
               What is Manuscript?
             </h2>
             <p className="text-ink-muted text-base leading-relaxed">
-              Most writers invest months — sometimes years — into a concept
+              Most writers invest months (sometimes years!) into a concept
               before discovering the market is oversaturated, or that their idea
               needs sharper differentiation. Manuscript gives you that signal
               upfront, so you can write with confidence or refine before you
@@ -455,7 +455,7 @@ export default function Home() {
                           )}
                           {book.edition_count && <span className="text-xs text-ink-muted">{book.edition_count} editions</span>}
                           <span className="text-xs px-2 py-0.5 rounded-full bg-sage-light text-sage-dark">
-                            {book.source === "google_books" ? "Google Books" : "Open Library"}
+                            {book.source === "google_books" ? "Google Books" : book.source === "hardcover" ? "Hardcover" : "Open Library"}
                           </span>
                         </div>
                       </div>
@@ -551,9 +551,14 @@ export default function Home() {
       <footer className="border-t border-border py-8 px-6">
         <div className="max-w-5xl mx-auto flex items-center justify-between">
           <span className="font-serif text-ink text-sm">Manuscript</span>
-          <span className="text-ink-muted text-xs italic">
-            Built for writers, by someone who wanted to know if their idea was worth writing.
-          </span>
+          <div className="flex items-center gap-4">
+            <span className="text-ink-muted text-xs">Built by Arundhati Bandopadhyaya</span>
+            <div className="flex items-center gap-3">
+              <a href="https://www.linkedin.com/in/abandopadhyaya/" target="_blank" rel="noopener noreferrer" className="text-ink-muted hover:text-ink text-xs transition-colors">LinkedIn</a>
+              <a href="https://github.com/buildwithari" target="_blank" rel="noopener noreferrer" className="text-ink-muted hover:text-ink text-xs transition-colors">GitHub</a>
+              <a href="https://buildwithari.vercel.app/" target="_blank" rel="noopener noreferrer" className="text-ink-muted hover:text-ink text-xs transition-colors">Portfolio</a>
+            </div>
+          </div>
         </div>
       </footer>
     </div>

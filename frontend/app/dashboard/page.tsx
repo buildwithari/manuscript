@@ -825,11 +825,11 @@ export default function Dashboard() {
                   rel="noopener noreferrer"
                   className="inline-block text-xs px-2.5 py-1 rounded-full bg-sage-light text-sage-dark hover:bg-sage hover:text-parchment transition-colors"
                 >
-                  {selectedBook.source === "google_books" ? "Google Books ↗" : "Open Library ↗"}
+                  {selectedBook.source === "google_books" ? "Google Books ↗" : selectedBook.source === "hardcover" ? "Hardcover ↗" : "Open Library ↗"}
                 </a>
               ) : (
                 <span className="inline-block text-xs px-2.5 py-1 rounded-full bg-sage-light text-sage-dark">
-                  {selectedBook.source === "google_books" ? "Google Books" : "Open Library"}
+                  {selectedBook.source === "google_books" ? "Google Books" : selectedBook.source === "hardcover" ? "Hardcover" : "Open Library"}
                 </span>
               )}
 

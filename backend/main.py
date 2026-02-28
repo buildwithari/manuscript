@@ -27,6 +27,9 @@ GOOGLE_BOOKS_API_KEY = os.getenv("GOOGLE_BOOKS_API_KEY")
 
 OPEN_LIBRARY_SEARCH_URL = "https://openlibrary.org/search.json"
 
+HARDCOVER_API_URL = "https://api.hardcover.app/v1/graphql"
+HARDCOVER_API_KEY = os.getenv("HARDCOVER_API_KEY")
+
 openai_client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 supabase: Client = create_client(
@@ -127,6 +130,53 @@ async def fetch_open_library(client: httpx.AsyncClient, q: str) -> list:
     return books
 
 
+async def fetch_hardcover(client: httpx.AsyncClient, q: str) -> list:
+    if not HARDCOVER_API_KEY:
+        return []
+
+    query = """
+    query SearchBooks($q: String!) {
+      search(query: $q, query_type: "books", per_page: 10) {
+        results
+      }
+    }
+    """
+
+    try:
+        response = await client.post(
+            HARDCOVER_API_URL,
+            json={"query": query, "variables": {"q": q}},
+            headers={"Authorization": HARDCOVER_API_KEY, "Content-Type": "application/json"},
+        )
+        if response.status_code != 200:
+            return []
+
+        raw = response.json().get("data", {}).get("search", {}).get("results")
+        if not raw:
+            return []
+
+        books = []
+        for hit in raw.get("hits", []):
+            doc = hit.get("document", {})
+            books.append({
+                "source": "hardcover",
+                "title": doc.get("title"),
+                "authors": doc.get("author_names") or [],
+                "description": doc.get("description"),
+                "published_date": str(doc["release_year"]) if doc.get("release_year") else None,
+                "categories": doc.get("genres") or [],
+                "rating": doc.get("rating"),
+                "ratings_count": doc.get("ratings_count"),
+                "edition_count": None,
+                "thumbnail": (doc.get("image") or {}).get("url"),
+                "link": f"https://hardcover.app/books/{doc['slug']}" if doc.get("slug") else None,
+            })
+        return books
+    except Exception as e:
+        print(f"[hardcover] exception: {e}")
+        return []
+
+
 @app.post("/analyze")
 async def analyze_concept(body: ConceptRequest):
     if not body.concept.strip():
@@ -160,12 +210,13 @@ Concept: {body.concept}"""
 @app.get("/search")
 async def search_books(q: str = Query(..., min_length=1)):
     async with httpx.AsyncClient() as client:
-        google_results, ol_results = await asyncio.gather(
+        google_results, ol_results, hc_results = await asyncio.gather(
             fetch_google_books(client, q),
             fetch_open_library(client, q),
+            fetch_hardcover(client, q),
         )
 
-    return {"query": q, "results": google_results + ol_results}
+    return {"query": q, "results": google_results + ol_results + hc_results}
 
 
 def deduplicate_books(books: list) -> list:
@@ -226,7 +277,7 @@ Concept: {body.concept}"""
         tasks = [
             coro
             for q in queries
-            for coro in (fetch_google_books(client, q), fetch_open_library(client, q))
+            for coro in (fetch_google_books(client, q), fetch_open_library(client, q), fetch_hardcover(client, q))
         ]
         results = await asyncio.gather(*tasks)
 

@@ -10,7 +10,7 @@ Describe your concept and Manuscript researches the market — finding comparabl
 
 ### Research tool
 - **Concept analysis** — Describe your idea in plain language. Manuscript identifies genre, subgenre, themes, and target audience
-- **Market research** — Searches Google Books and Open Library in parallel, deduplicates results, and surfaces comparable titles with ratings, edition counts, and cover images
+- **Market research** — Searches Google Books, Open Library, and Hardcover in parallel, deduplicates results, and surfaces comparable titles with ratings, edition counts, and cover images
 - **Market assessment** — Three signals: market category (Underserved Niche / Competitive / Saturated), audience enthusiasm (High / Moderate / Low), and a differentiation score (1–10)
 - **Publication trend chart** — Bar chart of comparable titles published per year, showing whether the genre is rising, peaking, or declining
 - **Comp pitch** — A one-line "Think X meets Y" comparable pitch suitable for query letters, generated from the analysis
@@ -40,7 +40,7 @@ Describe your concept and Manuscript researches the market — finding comparabl
 | Frontend | Next.js 16, TypeScript, Tailwind v4, App Router |
 | Backend | Python, FastAPI |
 | AI | OpenAI `gpt-4o-mini` |
-| Book data | Google Books API, Open Library API |
+| Book data | Google Books API, Open Library API, Hardcover API |
 | Auth + DB | Supabase (PostgreSQL + auth) |
 | Hosting (planned) | Vercel (frontend), AWS EC2 (backend) |
 
@@ -54,6 +54,7 @@ Describe your concept and Manuscript researches the market — finding comparabl
 - A Supabase project
 - OpenAI API key
 - Google Books API key (optional — works without it, lower rate limits)
+- Hardcover API key — [hardcover.app/account/api](https://hardcover.app/account/api)
 
 ### 1. Clone and install
 
@@ -76,6 +77,7 @@ Copy `.env.example` to `.env` and fill in your keys:
 ```
 OPENAI_API_KEY=
 GOOGLE_BOOKS_API_KEY=
+HARDCOVER_API_KEY=Bearer your_token_here
 SUPABASE_URL=
 SUPABASE_SERVICE_KEY=
 ```
@@ -123,7 +125,7 @@ The app runs at `http://localhost:3000`. The backend runs at `http://localhost:8
 | Method | Endpoint | Auth | Description |
 |---|---|---|---|
 | `GET` | `/health` | — | Health check |
-| `GET` | `/search?q=` | — | Search Google Books + Open Library |
+| `GET` | `/search?q=` | — | Search Google Books + Open Library + Hardcover |
 | `POST` | `/analyze` | — | Analyze a concept (genre, themes, audience) |
 | `POST` | `/research` | Optional | Full pipeline: analyze → search → score → save |
 | `GET` | `/projects` | Required | List user's projects |
@@ -136,20 +138,11 @@ The app runs at `http://localhost:3000`. The backend runs at `http://localhost:8
 
 ## What's next
 
-### Hardcover API
-The `HARDCOVER_API_KEY` is already in `.env.example`. Hardcover is a community-driven reading platform with richer, more opinionated ratings than Open Library — skewing toward serious readers, which is the exact audience signal that matters for literary fiction and genre fiction. Integrating it as a third data source would strengthen the audience enthusiasm signal and surface titles that Google Books and Open Library miss.
-
-**Implementation sketch:**
-- Add `fetch_hardcover()` alongside `fetch_google_books()` and `fetch_open_library()` in `main.py`
-- Hardcover uses a GraphQL API — query by title/genre for comparable books
-- Merge and deduplicate results the same way the existing sources are handled
-- The scoring prompt already accepts a variable number of comparable titles, so no prompt changes needed
-
-### Other ideas in the pipeline
+### Ideas in the pipeline
 - **Mobile layout** — the three-panel dashboard needs a responsive treatment for smaller screens
 - **Session notes** — let users annotate individual sessions with freeform notes
 - **Export improvements** — include the publication trend chart in the PDF export
 
 ---
 
-*Built for writers, by someone who wanted to know if their idea was worth writing.*
+*Built by [Arundhati Bandopadhyaya](https://buildwithari.vercel.app) · [LinkedIn](https://www.linkedin.com/in/abandopadhyaya/) · [GitHub](https://github.com/buildwithari)*
