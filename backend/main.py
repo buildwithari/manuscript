@@ -178,4 +178,47 @@ Concept: {body.concept}"""
     all_books = [book for batch in results for book in batch]
     books = deduplicate_books(all_books)
 
-    return {"concept": body.concept, "analysis": analysis, "books": books}
+    # Step 3: score the concept based on analysis + comparable books
+    book_summary = [
+        {
+            "title": b["title"],
+            "authors": b["authors"],
+            "rating": b["rating"],
+            "ratings_count": b["ratings_count"],
+            "edition_count": b["edition_count"],
+        }
+        for b in books[:15]
+    ]
+
+    scoring_prompt = f"""You are a book market analyst evaluating a writer's concept for market potential.
+
+Concept: {body.concept}
+
+Analysis:
+- Genre: {analysis.get("genre")} / {analysis.get("subgenre")}
+- Themes: {", ".join(analysis.get("themes", []))}
+- Target audience: {analysis.get("target_audience")}
+
+Comparable books found ({len(books)} total, showing top 15):
+{json.dumps(book_summary, indent=2)}
+
+Based on the genre, themes, competition, and comparable book performance, respond in JSON only:
+{{
+  "score": <integer 0-100>,
+  "reasoning": "2-3 sentences explaining the score based on market signals",
+  "recommendations": ["specific suggestion 1", "specific suggestion 2", "specific suggestion 3"]
+}}"""
+
+    scoring_response = await openai_client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": scoring_prompt}],
+        response_format={"type": "json_object"},
+    )
+    confidence = json.loads(scoring_response.choices[0].message.content)
+
+    return {
+        "concept": body.concept,
+        "analysis": analysis,
+        "confidence": confidence,
+        "books": books,
+    }
