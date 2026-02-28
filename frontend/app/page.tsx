@@ -20,6 +20,22 @@ interface Confidence {
   reasoning: string;
   recommendations: string[];
   comp_pitch?: string;
+  query_hook?: string;
+}
+
+function buildTrend(books: Book[]) {
+  const counts: Record<number, number> = {};
+  const currentYear = new Date().getFullYear();
+  books.forEach((b) => {
+    if (!b.published_date) return;
+    const year = parseInt(b.published_date.slice(0, 4), 10);
+    if (year >= 1990 && year <= currentYear) counts[year] = (counts[year] || 0) + 1;
+  });
+  if (Object.keys(counts).length === 0) return null;
+  const minYear = Math.max(Math.min(...Object.keys(counts).map(Number)), currentYear - 20);
+  const years = Array.from({ length: currentYear - minYear + 1 }, (_, i) => minYear + i);
+  const max = Math.max(...years.map((y) => counts[y] || 0), 1);
+  return { years, counts, max };
 }
 
 interface Book {
@@ -342,6 +358,47 @@ export default function Home() {
                   </ul>
                 </div>
               </div>
+
+              {/* Query hook */}
+              {result.confidence.query_hook && (
+                <div className="bg-surface border border-border rounded-2xl p-8 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs text-ink-muted uppercase tracking-widest">Query letter hook</p>
+                    <button
+                      onClick={() => navigator.clipboard.writeText(result.confidence.query_hook!)}
+                      className="text-xs text-ink-muted hover:text-sage transition-colors"
+                    >
+                      Copy
+                    </button>
+                  </div>
+                  <p className="text-ink text-sm leading-relaxed">{result.confidence.query_hook}</p>
+                </div>
+              )}
+
+              {/* Publication trend chart */}
+              {(() => {
+                const trend = buildTrend(result.books);
+                if (!trend) return null;
+                return (
+                  <div className="bg-surface border border-border rounded-2xl p-8">
+                    <p className="text-xs text-ink-muted uppercase tracking-widest mb-4">Publication trend</p>
+                    <div className="flex items-end gap-px h-16">
+                      {trend.years.map((year) => (
+                        <div
+                          key={year}
+                          className="flex-1 bg-sage rounded-sm opacity-70 hover:opacity-100 transition-opacity"
+                          style={{ height: `${((trend.counts[year] || 0) / trend.max) * 100}%`, minHeight: trend.counts[year] ? "2px" : "0" }}
+                          title={`${year}: ${trend.counts[year] || 0} title${(trend.counts[year] || 0) !== 1 ? "s" : ""}`}
+                        />
+                      ))}
+                    </div>
+                    <div className="flex justify-between mt-1.5">
+                      <span className="text-xs text-ink-muted">{trend.years[0]}</span>
+                      <span className="text-xs text-ink-muted">{trend.years[trend.years.length - 1]}</span>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Concept analysis */}
               <div className="bg-surface border border-border rounded-2xl p-8">
