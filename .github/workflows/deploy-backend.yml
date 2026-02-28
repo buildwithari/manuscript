@@ -53,13 +53,13 @@ jobs:
       - name: Parse AMI ID from Packer output
         id: parse_ami
         run: |
-          # machine-readable output has a line like:
-          # <timestamp>,amazon-ebs.ubuntu,artifact,0,id,us-east-1:ami-0abc1234567890
-          AMI_ID=$(grep 'artifact,0,id' /tmp/packer_output.txt \
-            | awk -F',' '{print $NF}' \
-            | cut -d: -f2 \
-            | tr -d '[:space:]')
+          AMI_ID=$(grep -oP 'ami-[a-f0-9]+' /tmp/packer_output.txt | tail -1)
           echo "Parsed AMI ID: $AMI_ID"
+          if [ -z "$AMI_ID" ]; then
+            echo "ERROR: Could not parse AMI ID from Packer output"
+            cat /tmp/packer_output.txt
+            exit 1
+          fi
           echo "ami_id=$AMI_ID" >> "$GITHUB_OUTPUT"
 
   # ---------------------------------------------------------------------------
