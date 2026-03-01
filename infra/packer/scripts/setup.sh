@@ -98,4 +98,11 @@ echo "==> Verifying systemd units registered"
 systemctl status manuscript-secrets.service --no-pager || true
 systemctl status manuscript.service --no-pager || true
 
+echo "=== Verifying setup ==="
+ls /app/backend
+ls /etc/systemd/system/ | grep manuscript
+systemctl is-enabled manuscript || echo "manuscript service not enabled"
+systemctl is-enabled manuscript-secrets || echo "manuscript-secrets service not enabled"
+cat /etc/systemd/system/manuscript.service || echo "service file not found"
+
 echo "==> setup.sh complete"
