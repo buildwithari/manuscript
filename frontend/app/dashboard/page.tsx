@@ -343,7 +343,9 @@ export default function Dashboard() {
       <nav className="shrink-0 bg-parchment border-b border-border h-12 flex items-center justify-between px-4">
         <span className="font-serif font-bold text-ink text-base tracking-tight">Manuscript</span>
         <div className="flex items-center gap-4">
-          <span className="text-xs text-ink-muted">{session?.user.email}</span>
+          <span className="text-xs text-ink-muted">
+            Hi, {session?.user.user_metadata?.first_name ?? session?.user.email?.split("@")[0]}
+          </span>
           <button
             onClick={() => supabase.auth.signOut()}
             className="text-xs text-ink-muted hover:text-ink transition-colors"
