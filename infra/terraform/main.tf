@@ -4,6 +4,8 @@
 
 # Use the default VPC and its subnets — simpler than creating a custom VPC for MVP.
 # ALB requires at least two AZs, so we pull all default subnets.
+data "aws_caller_identity" "current" {}
+
 data "aws_vpc" "default" {
   default = true
 }
@@ -149,7 +151,7 @@ resource "aws_iam_role_policy" "ssm_secrets" {
         "ssm:GetParameter",
         "ssm:GetParametersByPath",
       ]
-      Resource = "arn:aws:ssm:${var.aws_region}:*:parameter/manuscript/backend/*"
+      Resource = "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter/manuscript/backend/*"
     }]
   })
 }
