@@ -280,7 +280,7 @@ resource "aws_autoscaling_group" "api" {
 
   launch_template {
     id      = aws_launch_template.api.id
-    version = "$Latest"
+    version = aws_launch_template.api.latest_version
   }
 
   # Wait for the instance to pass the ALB health check before marking it healthy
