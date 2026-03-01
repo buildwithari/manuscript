@@ -106,8 +106,12 @@ export default function Home() {
   const [authMode, setAuthMode] = useState<"signin" | "signup">("signin");
   const [authEmail, setAuthEmail] = useState("");
   const [authPassword, setAuthPassword] = useState("");
+  const [authFirstName, setAuthFirstName] = useState("");
+  const [authLastName, setAuthLastName] = useState("");
+  const [authConfirmPassword, setAuthConfirmPassword] = useState("");
   const [authError, setAuthError] = useState<string | null>(null);
   const [authLoading, setAuthLoading] = useState(false);
+  const [signupEmailSent, setSignupEmailSent] = useState(false);
 
   const toolRef = useRef<HTMLElement>(null);
 
@@ -119,21 +123,73 @@ export default function Home() {
     return () => subscription.unsubscribe();
   }, [router]);
 
+  const isValidEmail = (email: string) =>
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+
+  const friendlyAuthError = (msg: string): string => {
+    if (msg.includes("Invalid login credentials")) return "Incorrect email or password.";
+    if (msg.includes("Email not confirmed")) return "Please confirm your email before signing in.";
+    if (msg.includes("User already registered")) return "An account with this email already exists.";
+    if (msg.includes("Password should be at least")) return "Password must be at least 8 characters.";
+    if (msg.includes("Unable to validate email address")) return "Please enter a valid email address.";
+    if (msg.includes("rate limit") || msg.includes("too many")) return "Too many attempts. Please wait a moment and try again.";
+    return msg;
+  };
+
+  const pwChecks = {
+    length: authPassword.length >= 8,
+    uppercase: /[A-Z]/.test(authPassword),
+    numberOrSpecial: /[0-9!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]/.test(authPassword),
+  };
+
   const handleSignIn = async () => {
-    setAuthLoading(true);
     setAuthError(null);
+    if (!isValidEmail(authEmail)) { setAuthError("Please enter a valid email address."); return; }
+    if (!authPassword.trim()) { setAuthError("Password is required."); return; }
+    setAuthLoading(true);
     const { error } = await supabase.auth.signInWithPassword({ email: authEmail, password: authPassword });
-    if (error) setAuthError(error.message);
+    if (error) setAuthError(friendlyAuthError(error.message));
     // on success, onAuthStateChange fires and redirects to /dashboard
     setAuthLoading(false);
   };
 
   const handleSignUp = async () => {
+    setAuthError(null);
+    if (!authFirstName.trim() || !authLastName.trim()) { setAuthError("First and last name are required."); return; }
+    if (!isValidEmail(authEmail)) { setAuthError("Please enter a valid email address."); return; }
+    if (!pwChecks.length || !pwChecks.uppercase || !pwChecks.numberOrSpecial) {
+      setAuthError("Password doesn't meet the requirements listed above."); return;
+    }
+    if (authPassword !== authConfirmPassword) { setAuthError("Passwords do not match."); return; }
+    setAuthLoading(true);
+    const { error } = await supabase.auth.signUp({
+      email: authEmail,
+      password: authPassword,
+      options: {
+        emailRedirectTo: "https://manuscript.help",
+        data: { first_name: authFirstName, last_name: authLastName },
+      },
+    });
+    if (error) {
+      setAuthError(friendlyAuthError(error.message));
+    } else {
+      setSignupEmailSent(true);
+    }
+    setAuthLoading(false);
+  };
+
+  const handleGoogleSignIn = async () => {
     setAuthLoading(true);
     setAuthError(null);
-    const { error } = await supabase.auth.signUp({ email: authEmail, password: authPassword });
-    if (error) setAuthError(error.message);
-    setAuthLoading(false);
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: "https://manuscript.help/auth/callback" },
+    });
+    if (error) {
+      setAuthError(error.message);
+      setAuthLoading(false);
+    }
+    // On success, browser redirects — no cleanup needed
   };
 
   const scrollToTool = () => {
@@ -482,68 +538,195 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Auth modal */}
+      {/* Auth overlay — fullscreen two-column */}
       {showAuthModal && (
-        <div className="fixed inset-0 z-50 bg-ink/40 backdrop-blur-sm flex items-center justify-center px-6">
-          <div className="bg-parchment rounded-2xl border border-border w-full max-w-sm p-8">
-            <div className="flex items-center justify-between mb-8">
-              <h2 className="font-serif text-2xl text-ink">
-                {authMode === "signin" ? "Sign in" : "Create account"}
-              </h2>
+        <div className="fixed inset-0 z-50 flex">
+
+          {/* Left column — form, parchment bg */}
+          <div className="flex-1 md:flex-none md:w-1/2 bg-parchment flex flex-col overflow-y-auto">
+
+            {/* Top bar */}
+            <div className="flex items-center justify-between px-8 pt-8 shrink-0">
+              <span className="[font-family:var(--font-serif)] font-bold text-ink text-lg tracking-tight">Manuscript</span>
               <button
-                onClick={() => { setShowAuthModal(false); setAuthError(null); }}
+                onClick={() => { setShowAuthModal(false); setAuthError(null); setSignupEmailSent(false); setAuthFirstName(""); setAuthLastName(""); setAuthConfirmPassword(""); }}
                 className="text-ink-muted hover:text-ink transition-colors text-lg leading-none"
+                aria-label="Close"
               >
                 ✕
               </button>
             </div>
 
-            <div className="space-y-4">
-              <div>
-                <label className="text-xs text-ink-muted uppercase tracking-widest block mb-2">Email</label>
-                <input
-                  type="email"
-                  value={authEmail}
-                  onChange={(e) => setAuthEmail(e.target.value)}
-                  className="w-full bg-surface border border-border rounded-xl px-4 py-3 text-ink text-sm focus:outline-none focus:border-sage"
-                />
-              </div>
-              <div>
-                <label className="text-xs text-ink-muted uppercase tracking-widest block mb-2">Password</label>
-                <input
-                  type="password"
-                  value={authPassword}
-                  onChange={(e) => setAuthPassword(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && (authMode === "signin" ? handleSignIn() : handleSignUp())}
-                  className="w-full bg-surface border border-border rounded-xl px-4 py-3 text-ink text-sm focus:outline-none focus:border-sage"
-                />
+            {/* Form — vertically centered */}
+            <div className="flex-1 flex items-center justify-center px-8 py-12">
+              <div className="w-full max-w-[480px]">
+
+                <h2 className={`text-3xl text-ink font-bold ${signupEmailSent ? "mb-6" : "[font-family:var(--font-serif)] mb-8"}`}>
+                  {signupEmailSent ? "Check your inbox" : authMode === "signin" ? "Sign in" : "Create account"}
+                </h2>
+
+                {signupEmailSent ? (
+                  <div className="space-y-5">
+                    <p className="text-ink-muted text-sm leading-relaxed">
+                      A confirmation link is on its way to <span className="text-sage font-bold">{authEmail}</span>.
+                    </p>
+                    <p className="text-ink-muted text-sm leading-relaxed">
+                      Click the link to activate your account, then{" "}
+                      <button
+                        onClick={() => { setSignupEmailSent(false); setAuthMode("signin"); }}
+                        className="[font-family:var(--font-serif)] italic text-sage hover:text-sage-dark underline underline-offset-2 transition-colors"
+                      >
+                        sign in
+                      </button>
+                      .
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <button
+                      onClick={handleGoogleSignIn}
+                      disabled={authLoading}
+                      className="w-full flex items-center justify-center gap-3 bg-surface border border-border rounded-full px-4 py-3 text-sm text-ink font-medium hover:border-sage hover:bg-sage-light transition-colors disabled:opacity-40"
+                    >
+                      <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+                        <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z"/>
+                        <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.258c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"/>
+                        <path fill="#FBBC05" d="M3.964 10.707A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.707V4.961H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.039l3.007-2.332z"/>
+                        <path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.961L3.964 7.293C4.672 5.163 6.656 3.58 9 3.58z"/>
+                      </svg>
+                      Continue with Google
+                    </button>
+
+                    <div className="flex items-center gap-3 my-4">
+                      <div className="flex-1 h-px bg-border" />
+                      <span className="text-xs text-ink-muted uppercase tracking-widest">or</span>
+                      <div className="flex-1 h-px bg-border" />
+                    </div>
+
+                    <div className="space-y-4">
+                      {authMode === "signup" && (
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="text-xs text-ink-muted uppercase tracking-widest block mb-2">First Name</label>
+                            <input
+                              type="text"
+                              value={authFirstName}
+                              onChange={(e) => setAuthFirstName(e.target.value)}
+                              className="w-full bg-surface border border-border rounded-xl px-4 py-3 text-ink text-sm focus:outline-none focus:border-sage"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-xs text-ink-muted uppercase tracking-widest block mb-2">Last Name</label>
+                            <input
+                              type="text"
+                              value={authLastName}
+                              onChange={(e) => setAuthLastName(e.target.value)}
+                              className="w-full bg-surface border border-border rounded-xl px-4 py-3 text-ink text-sm focus:outline-none focus:border-sage"
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      <div>
+                        <label className="text-xs text-ink-muted uppercase tracking-widest block mb-2">Email</label>
+                        <input
+                          type="email"
+                          value={authEmail}
+                          onChange={(e) => setAuthEmail(e.target.value)}
+                          className="w-full bg-surface border border-border rounded-xl px-4 py-3 text-ink text-sm focus:outline-none focus:border-sage"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-xs text-ink-muted uppercase tracking-widest block mb-2">Password</label>
+                        <input
+                          type="password"
+                          value={authPassword}
+                          onChange={(e) => setAuthPassword(e.target.value)}
+                          onKeyDown={(e) => e.key === "Enter" && (authMode === "signin" ? handleSignIn() : handleSignUp())}
+                          className="w-full bg-surface border border-border rounded-xl px-4 py-3 text-ink text-sm focus:outline-none focus:border-sage"
+                        />
+                        {authMode === "signup" && authPassword.length > 0 && (
+                          <ul className="mt-2.5 space-y-1.5">
+                            {[
+                              { ok: pwChecks.length, label: "At least 8 characters" },
+                              { ok: pwChecks.uppercase, label: "One uppercase letter" },
+                              { ok: pwChecks.numberOrSpecial, label: "One number or special character" },
+                            ].map(({ ok, label }) => (
+                              <li key={label} className={`flex items-center gap-2 text-xs transition-colors ${ok ? "text-sage-dark" : "text-ink-muted"}`}>
+                                <span className="w-3 shrink-0">{ok ? "✓" : "○"}</span>
+                                {label}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+
+                      {authMode === "signup" && (
+                        <div>
+                          <label className="text-xs text-ink-muted uppercase tracking-widest block mb-2">Confirm Password</label>
+                          <input
+                            type="password"
+                            value={authConfirmPassword}
+                            onChange={(e) => setAuthConfirmPassword(e.target.value)}
+                            onKeyDown={(e) => e.key === "Enter" && handleSignUp()}
+                            className="w-full bg-surface border border-border rounded-xl px-4 py-3 text-ink text-sm focus:outline-none focus:border-sage"
+                          />
+                        </div>
+                      )}
+                    </div>
+
+                    {authError && (
+                      <p className="mt-4 text-sm text-ink-muted leading-relaxed">
+                        {authError}
+                      </p>
+                    )}
+
+                    <button
+                      onClick={authMode === "signin" ? handleSignIn : handleSignUp}
+                      disabled={authLoading || !authEmail.trim() || !authPassword.trim() || (authMode === "signup" && (!authFirstName.trim() || !authLastName.trim() || !authConfirmPassword.trim()))}
+                      className="w-full mt-6 bg-ink text-parchment py-3 rounded-full text-sm font-medium disabled:opacity-40 hover:bg-sage-dark transition-colors"
+                    >
+                      {authLoading ? "…" : authMode === "signin" ? "Sign in" : "Create account"}
+                    </button>
+
+                    <p className="text-center text-xs text-ink-muted mt-5">
+                      {authMode === "signin" ? "No account? " : "Already have one? "}
+                      <button
+                        onClick={() => { setAuthMode(authMode === "signin" ? "signup" : "signin"); setAuthError(null); setAuthConfirmPassword(""); setAuthFirstName(""); setAuthLastName(""); }}
+                        className="text-sage hover:underline"
+                      >
+                        {authMode === "signin" ? "Sign up" : "Sign in"}
+                      </button>
+                    </p>
+                  </>
+                )}
               </div>
             </div>
-
-            {authError && (
-              <p className="mt-4 text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl px-4 py-2.5">
-                {authError}
-              </p>
-            )}
-
-            <button
-              onClick={authMode === "signin" ? handleSignIn : handleSignUp}
-              disabled={authLoading || !authEmail.trim() || !authPassword.trim()}
-              className="w-full mt-6 bg-ink text-parchment py-3 rounded-full text-sm font-medium disabled:opacity-40 hover:bg-sage-dark transition-colors"
-            >
-              {authLoading ? "…" : authMode === "signin" ? "Sign in" : "Create account"}
-            </button>
-
-            <p className="text-center text-xs text-ink-muted mt-5">
-              {authMode === "signin" ? "No account? " : "Already have one? "}
-              <button
-                onClick={() => { setAuthMode(authMode === "signin" ? "signup" : "signin"); setAuthError(null); }}
-                className="text-sage hover:underline"
-              >
-                {authMode === "signin" ? "Sign up" : "Sign in"}
-              </button>
-            </p>
           </div>
+
+          {/* Right column — full-bleed image with overlay, desktop only */}
+          <div className="hidden md:flex flex-1 relative overflow-hidden">
+
+            {/* Full-bleed image */}
+            <Image src="/auth-image.jpg" alt="" fill className="object-cover" />
+
+            {/* Gradient overlays — darken top and bottom for legibility */}
+            <div className="absolute inset-0 bg-gradient-to-t from-ink/80 via-ink/10 to-transparent" />
+
+            {/* Overlaid content */}
+            <div className="relative z-10 flex flex-col justify-end w-full px-12 py-10">
+              <div>
+                <p className="font-serif italic text-parchment text-2xl leading-snug">
+                  Know if your book idea<br />is worth writing.
+                </p>
+                <p className="text-parchment/60 text-sm mt-3 leading-relaxed max-w-xs">
+                  Research the market before you invest months bringing an idea to life.
+                </p>
+              </div>
+            </div>
+          </div>
+
         </div>
       )}
 
