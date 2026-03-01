@@ -43,7 +43,7 @@ source "amazon-ebs" "ubuntu" {
   ssh_username = "ubuntu"
 
   ami_name        = "manuscript-backend-{{timestamp}}"
-  ami_description = "Manuscript FastAPI backend — baked by Packer"
+  ami_description = "Manuscript FastAPI backend - baked by Packer"
 
   # Tag the AMI so it's easy to identify and clean up old ones
   tags = {
