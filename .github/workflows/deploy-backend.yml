@@ -50,6 +50,10 @@ jobs:
           packer build -machine-readable infra/packer/manuscript.pkr.hcl \
             | tee /tmp/packer_output.txt
 
+      - name: Print Packer output
+        if: always()
+        run: cat /tmp/packer_output.txt
+
       - name: Parse AMI ID from Packer output
         id: parse_ami
         run: |
