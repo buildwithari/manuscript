@@ -5,7 +5,7 @@
 
 set -euo pipefail
 
-SSM_PATH="/manuscript/backend"
+SSM_PATH="/manuscript/backend/"
 ENV_FILE="/etc/manuscript/env"
 REGION="us-east-1"
 
