@@ -21,6 +21,7 @@ app.add_middleware(
         "http://localhost:3000",
         "https://manuscript-ebon.vercel.app",
         "https://manuscript.help",
+        "https://www.manuscript.help",
     ],
     allow_methods=["*"],
     allow_headers=["*"],
