@@ -59,8 +59,14 @@ source "amazon-ebs" "ubuntu" {
 build {
   sources = ["source.amazon-ebs.ubuntu"]
 
-  # Upload the backend application code
-  # The provisioner runs from the repo root (set in the GitHub Actions workflow)
+  # Create upload destinations before the file provisioners run.
+  # Packer's file provisioner requires the destination directory to exist.
+  provisioner "shell" {
+    inline = ["mkdir -p /tmp/backend"]
+  }
+
+  # Upload the backend application code.
+  # source ends with / so Packer uploads the *contents* of backend/ into /tmp/backend/
   provisioner "file" {
     source      = "backend/"
     destination = "/tmp/backend"
@@ -74,7 +80,7 @@ build {
 
   # Run the setup script as root
   provisioner "shell" {
-    script = "infra/packer/scripts/setup.sh"
+    script          = "infra/packer/scripts/setup.sh"
     execute_command = "sudo bash '{{ .Path }}'"
   }
 }
