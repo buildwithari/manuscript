@@ -151,7 +151,10 @@ resource "aws_iam_role_policy" "ssm_secrets" {
         "ssm:GetParameter",
         "ssm:GetParametersByPath",
       ]
-      Resource = "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter/manuscript/backend/*"
+      Resource = [
+        "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter/manuscript/backend/*",
+        "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter/manuscript/backend",
+      ]
     }]
   })
 }
