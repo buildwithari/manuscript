@@ -27,6 +27,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Verify CORS config before bake
+        run: grep -A 10 "allow_origins" backend/main.py
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:

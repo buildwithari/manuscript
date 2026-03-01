@@ -292,6 +292,7 @@ resource "aws_autoscaling_group" "api" {
   # new one warms up, keeping downtime to near-zero.
   instance_refresh {
     strategy = "Rolling"
+    triggers = ["launch_template"]  # fires a refresh whenever the launch template changes (new AMI)
     preferences {
       min_healthy_percentage = 0   # min 1 max 1 means we must allow 0% during swap
       instance_warmup        = 60
