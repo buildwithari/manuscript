@@ -18,6 +18,12 @@ html {
   scroll-behavior: smooth;
 }
 
+.grammar-fix-highlight {
+  background-color: rgba(251, 191, 36, 0.25);
+  border-bottom: 2px solid rgb(251, 191, 36);
+  border-radius: 2px;
+}
+
 body {
   background-color: #F5F3EE;
   color: #1C1C1A;
