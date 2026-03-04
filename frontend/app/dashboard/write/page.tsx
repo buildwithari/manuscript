@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "../../../lib/supabase";
@@ -219,7 +219,7 @@ function SortableChapterItem({
 
 // --- Main Write page ---
 
-export default function WritePage() {
+function WritePageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -1436,5 +1436,13 @@ export default function WritePage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function WritePage() {
+  return (
+    <Suspense>
+      <WritePageContent />
+    </Suspense>
   );
 }
