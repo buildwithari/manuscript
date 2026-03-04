@@ -1,8 +1,10 @@
 # Manuscript
 
-Manuscript helps writers validate their book ideas before they invest months bringing them to life.
+Manuscript helps writers go from first idea to finished draft — with market research upfront and an AI-assisted writing environment once they're ready to write.
 
-Describe your concept and Manuscript researches the market — finding comparable published books, assessing how crowded the space is, how enthusiastic readers are, and how much room exists for a fresh take. You get a market assessment, a comp pitch, a query letter hook, and actionable recommendations to strengthen your idea before you start writing.
+**Ideate** — Describe your concept and Manuscript researches the market: comparable published titles, how crowded the space is, how enthusiastic readers are, and how much room exists for a fresh take. You get a market assessment, a comp pitch, a query letter hook, and actionable recommendations.
+
+**Write** — Once you've validated your concept, carry that research into the writing phase. A distraction-free editor with chapter management and an AI assistant that already knows your genre, target audience, and comp titles.
 
 **Live at [manuscript.help](https://manuscript.help)**
 
@@ -10,7 +12,7 @@ Describe your concept and Manuscript researches the market — finding comparabl
 
 ## Features
 
-### Research tool
+### Ideate (free, no account needed)
 - **Concept analysis** — Describe your idea in plain language. Manuscript identifies genre, subgenre, themes, and target audience
 - **Market research** — Searches Google Books, Open Library, and Hardcover in parallel, deduplicates results, and surfaces comparable titles with ratings, edition counts, and cover images
 - **Market assessment** — Three signals: market category (Underserved Niche / Competitive / Saturated), audience enthusiasm (High / Moderate / Low), and a differentiation score (1–10)
@@ -19,19 +21,25 @@ Describe your concept and Manuscript researches the market — finding comparabl
 - **Query letter hook** — A 2–3 sentence query letter opening paragraph, copyable with one click
 - **Recommendations** — Three specific suggestions to differentiate or strengthen the concept
 
-### Dashboard (requires account)
-- **Project history** — Each concept lives in a project (like a chat). Run multiple analyses on the same idea and the model sees how it has evolved
-- **Chat interface** — Claude-style layout: sidebar with project list, scrollable chat history, analysis panel on the right
-- **Differentiation score timeline** — Visual chart of how the differentiation score has changed across sessions in a project
-- **Book detail modal** — Click any comparable title to see full details: cover, author, publication date, ratings, description, and a direct link to Google Books or Open Library
-- **Resizable right panel** — Drag to adjust the analysis panel width
-- **Export to PDF** — One-click export of the full analysis (signals, comp pitch, query hook, recommendations, concept breakdown) as a clean print-ready document
-- **Inline project rename** — Click the pencil icon to rename any project in the sidebar
-- **Project delete** — Remove projects from the sidebar with the trash icon
+### Dashboard — Ideate tab (requires account)
+- **Project history** — Each concept lives in a project. Run multiple analyses on the same idea and the model sees how it has evolved
+- **Chat interface** — Sidebar with project list, scrollable chat history, analysis panel on the right
+- **Differentiation score timeline** — Visual chart of how the score has changed across sessions in a project
+- **Book detail modal** — Click any comparable title to see full details with a direct link to Google Books or Open Library
+- **Export to PDF** — One-click export of the full analysis as a clean print-ready document
+- **Finalize idea** — When a concept is ready, create a novel from it and move straight into the Write phase
 
-### Landing page
-- **Guest tool** — Try the full analysis without an account (results not saved)
-- **Sign-up CTA** — After a guest analysis, prompt to create an account and save the work
+### Dashboard — Write tab (requires account)
+- **Novel management** — Novels are created from finalized Ideate projects; title changes sync bidirectionally between phases
+- **Chapter management** — Create, rename, reorder (drag-and-drop), and delete chapters; bulk select-all delete with confirmation
+- **Distraction-free editor** — TipTap rich text editor: Bold, Italic, Underline, Scene Break; max-width 680px, Lora serif, 18px at 1.8 line-height
+- **Auto-save** — Debounced 3 s after last keystroke; Ctrl+S / Cmd+S for instant save; live word count
+- **AI Writing Assistant** — Four context-aware actions using your market research:
+  - *Get unstuck* — suggests 2–3 story directions
+  - *Continuity check* — scans chapters for inconsistencies
+  - *Strengthen this scene* — pacing, tension, and voice suggestions
+  - *What would my reader think?* — reader-perspective reaction
+- **Grammar & Style Check** — Inline highlights for spelling and grammar errors; larger issues (clarity, pacing, voice, consistency) flagged separately with explanations and suggested rewrites; apply or ignore per issue
 
 ---
 
@@ -40,10 +48,11 @@ Describe your concept and Manuscript researches the market — finding comparabl
 | Layer | Technology |
 |---|---|
 | Frontend | Next.js 16, TypeScript, Tailwind v4, App Router |
+| Editor | TipTap (ProseMirror), @dnd-kit/sortable |
 | Backend | Python, FastAPI |
 | AI | OpenAI `gpt-4o-mini` |
 | Book data | Google Books API, Open Library API, Hardcover API |
-| Auth + DB | Supabase (PostgreSQL + auth) |
+| Auth + DB | Supabase (PostgreSQL + RLS + auth) |
 | Hosting | Vercel (frontend), AWS EC2 behind ALB (backend) |
 | Infrastructure | Terraform + Packer |
 | CI/CD | GitHub Actions |
@@ -54,12 +63,10 @@ Describe your concept and Manuscript researches the market — finding comparabl
 
 The backend is deployed on AWS using an immutable infrastructure approach.
 
-**How it works:**
-
 On every merge to `main` that touches `backend/` or `infra/`, GitHub Actions runs a two-job pipeline:
 
 1. **Packer** bakes a fresh AMI — launches a temporary EC2, installs Python 3.11, copies the backend code, installs dependencies, and registers a systemd service. App secrets are never baked in.
-2. **Terraform** applies the new AMI to the infrastructure — updates the Launch Template and triggers an Auto Scaling Group instance refresh, which brings up the new instance behind the ALB before terminating the old one (blue/green, near-zero downtime).
+2. **Terraform** applies the new AMI — updates the Launch Template and triggers an Auto Scaling Group instance refresh, bringing up the new instance behind the ALB before terminating the old one (blue/green, near-zero downtime).
 
 **AWS resources managed by Terraform:**
 - Application Load Balancer with HTTPS (ACM certificate, HTTP→HTTPS redirect)
@@ -151,25 +158,34 @@ The app runs at `http://localhost:3000`. The backend runs at `http://localhost:8
 
 ## API endpoints
 
-| Method | Endpoint | Auth | Description |
-|---|---|---|---|
-| `GET` | `/health` | — | Health check |
-| `GET` | `/search?q=` | — | Search Google Books + Open Library + Hardcover |
-| `POST` | `/analyze` | — | Analyze a concept (genre, themes, audience) |
-| `POST` | `/research` | Optional | Full pipeline: analyze → search → score → save |
-| `GET` | `/projects` | Required | List user's projects |
-| `POST` | `/projects` | Required | Create a project |
-| `GET` | `/projects/{id}` | Required | Get project with session history |
-| `PATCH` | `/projects/{id}` | Required | Rename a project |
-| `DELETE` | `/projects/{id}` | Required | Delete a project |
+### Public
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/health` | Health check |
+| `GET` | `/search?q=` | Search Google Books + Open Library + Hardcover |
+| `POST` | `/analyze` | Analyze a concept (genre, themes, audience) |
+| `POST` | `/research` | Full pipeline: analyze → search → score → save |
 
----
+### Projects (auth required)
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/projects` | List user's projects |
+| `POST` | `/projects` | Create a project |
+| `GET` | `/projects/{id}` | Get project with session history |
+| `PATCH` | `/projects/{id}` | Rename a project (syncs linked novel title) |
+| `DELETE` | `/projects/{id}` | Delete a project |
 
-## What's next
-
-- **Mobile layout** — the three-panel dashboard needs a responsive treatment for smaller screens
-- **Session notes** — let users annotate individual sessions with freeform notes
-- **Export improvements** — include the publication trend chart in the PDF export
+### Novels & chapters (auth required)
+| Method | Endpoint | Description |
+|---|---|---|
+| `POST` | `/novels` | Create a novel (optionally linked to a project) |
+| `GET` | `/novels` | List user's novels with nested chapters |
+| `PATCH` | `/novels/{id}` | Rename a novel (syncs linked project title) |
+| `DELETE` | `/novels/{id}` | Delete a novel and all its chapters |
+| `POST` | `/novels/{id}/chapters` | Create a chapter |
+| `PATCH` | `/chapters/{id}` | Update title, content, word count, or order |
+| `DELETE` | `/chapters/{id}` | Delete a chapter |
+| `POST` | `/novels/{id}/assist` | AI assistant (writing actions + grammar check) |
 
 ---
 

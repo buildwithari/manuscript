@@ -8,6 +8,11 @@ import { supabase } from "../../lib/supabase";
 
 // --- Types ---
 
+interface Novel {
+  id: string;
+  project_id: string | null;
+}
+
 interface Analysis {
   title?: string;
   genre: string;
@@ -106,6 +111,13 @@ export default function Dashboard() {
   const [editTitle, setEditTitle] = useState("");
   const [selectedBook, setSelectedBook] = useState<Book | null>(null);
 
+  const [novels, setNovels] = useState<Novel[]>([]);
+  const [finalizeModal, setFinalizeModal] = useState(false);
+  const [finalizeTitle, setFinalizeTitle] = useState("");
+  const [finalizing, setFinalizing] = useState(false);
+  const [deleteBlockedProject, setDeleteBlockedProject] = useState<Project | null>(null);
+  const [deleteConfirmProject, setDeleteConfirmProject] = useState<Project | null>(null);
+
   const [sidebarWidth, setSidebarWidth] = useState(288);
   const isResizing = useRef(false);
 
@@ -137,10 +149,11 @@ export default function Dashboard() {
     return () => subscription.unsubscribe();
   }, [router]);
 
-  // Load projects when session is ready
+  // Load projects + novels when session is ready
   useEffect(() => {
     if (!session) return;
     fetchProjects(session.access_token);
+    fetchNovels(session.access_token);
   }, [session]);
 
   // Scroll to bottom when messages change
@@ -153,6 +166,44 @@ export default function Dashboard() {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (res.ok) setProjects(await res.json());
+  };
+
+  const fetchNovels = async (token: string) => {
+    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/novels`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (res.ok) setNovels(await res.json());
+  };
+
+  const finalizedProjectIds = new Set(novels.map((n) => n.project_id).filter(Boolean));
+
+  const openFinalizeModal = () => {
+    setFinalizeTitle(activeProject?.title ?? "Untitled");
+    setFinalizeModal(true);
+  };
+
+  const handleFinalize = async () => {
+    if (!session || !activeProject || !finalizeTitle.trim()) return;
+    setFinalizing(true);
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/novels`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ title: finalizeTitle.trim(), project_id: activeProject.id }),
+      });
+      if (!res.ok) throw new Error("Failed to create novel");
+      const novel = await res.json();
+      setNovels((prev) => [novel, ...prev]);
+      setFinalizeModal(false);
+      router.push(`/dashboard/write?novel=${novel.id}`);
+    } catch {
+      // silently handle
+    } finally {
+      setFinalizing(false);
+    }
   };
 
   const selectProject = async (project: Project) => {
@@ -246,7 +297,15 @@ export default function Dashboard() {
     setEditingId(null);
   };
 
-  const handleDelete = async (project: Project) => {
+  const handleDelete = (project: Project) => {
+    if (finalizedProjectIds.has(project.id)) {
+      setDeleteBlockedProject(project);
+      return;
+    }
+    setDeleteConfirmProject(project);
+  };
+
+  const confirmDelete = async (project: Project) => {
     if (!session) return;
     await fetch(`${process.env.NEXT_PUBLIC_API_URL}/projects/${project.id}`, {
       method: "DELETE",
@@ -341,7 +400,20 @@ export default function Dashboard() {
 
       {/* Top nav */}
       <nav className="shrink-0 bg-parchment border-b border-border h-12 flex items-center justify-between px-4">
-        <span className="font-serif font-bold text-ink text-base tracking-tight">Manuscript</span>
+        <div className="flex items-center gap-6">
+          <span className="font-serif font-bold text-ink text-base tracking-tight">Manuscript</span>
+          <div className="flex items-center gap-1">
+            <span className="text-sm font-medium text-sage-dark border-b-2 border-sage pb-0.5 px-1">
+              Ideate
+            </span>
+            <button
+              onClick={() => router.push("/dashboard/write")}
+              className="text-sm text-ink-muted hover:text-ink pb-0.5 px-1 border-b-2 border-transparent hover:border-ink-muted transition-colors"
+            >
+              Write
+            </button>
+          </div>
+        </div>
         <div className="flex items-center gap-4">
           <span className="text-xs text-ink-muted">
             Hi, {session?.user.user_metadata?.first_name ?? session?.user.email?.split("@")[0]}
@@ -398,6 +470,9 @@ export default function Dashboard() {
                     <span className={`flex-1 text-sm truncate ${activeProject?.id === p.id ? "text-sage-dark font-medium" : "text-ink"}`}>
                       {p.title}
                     </span>
+                  )}
+                  {finalizedProjectIds.has(p.id) && editingId !== p.id && (
+                    <span title="Has a novel in Write" className="shrink-0 text-sage-dark text-xs">✒</span>
                   )}
 
                   {/* Edit / Delete — visible on hover */}
@@ -647,6 +722,27 @@ export default function Dashboard() {
                 </button>
               </div>
 
+              {activeProject && !finalizedProjectIds.has(activeProject.id) && (
+                <button
+                  onClick={openFinalizeModal}
+                  className="w-full text-center text-sm font-medium text-parchment bg-sage border border-sage rounded-xl px-4 py-2.5 hover:bg-sage-dark transition-colors"
+                >
+                  Finalize idea
+                </button>
+              )}
+              {activeProject && finalizedProjectIds.has(activeProject.id) && (
+                <button
+                  onClick={() => {
+                    const novel = novels.find((n) => n.project_id === activeProject.id);
+                    if (novel) router.push(`/dashboard/write?novel=${novel.id}`);
+                    else router.push("/dashboard/write");
+                  }}
+                  className="w-full text-center text-sm font-medium text-parchment bg-sage border border-sage rounded-xl px-4 py-2.5 hover:bg-sage-dark transition-colors"
+                >
+                  ✒ Continue writing
+                </button>
+              )}
+
               <div>
                 <p className="text-xs text-ink-muted uppercase tracking-widest mb-3">Latest analysis</p>
                 <div className="space-y-3">
@@ -767,6 +863,120 @@ export default function Dashboard() {
         </aside>
 
       </div>
+
+      {/* Delete project confirmation */}
+      {deleteConfirmProject && (
+        <div
+          className="fixed inset-0 z-50 bg-ink/40 backdrop-blur-sm flex items-center justify-center px-6"
+          onClick={() => setDeleteConfirmProject(null)}
+        >
+          <div
+            className="bg-parchment rounded-2xl border border-border w-full max-w-sm p-7 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div>
+              <h2 className="font-serif text-xl text-ink mb-1">Delete this idea?</h2>
+              <p className="text-sm text-ink-muted leading-relaxed">
+                <span className="text-ink font-medium">{deleteConfirmProject.title}</span> and all its research sessions will be permanently removed.
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setDeleteConfirmProject(null)}
+                className="flex-1 text-sm text-ink-muted border border-border rounded-xl py-2 hover:border-ink transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => { confirmDelete(deleteConfirmProject); setDeleteConfirmProject(null); }}
+                className="flex-1 text-sm font-medium bg-red-600 text-white rounded-xl py-2 hover:bg-red-700 transition-colors"
+              >
+                Delete permanently
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete blocked — linked novel exists */}
+      {deleteBlockedProject && (
+        <div
+          className="fixed inset-0 z-50 bg-ink/40 backdrop-blur-sm flex items-center justify-center px-6"
+          onClick={() => setDeleteBlockedProject(null)}
+        >
+          <div
+            className="bg-parchment rounded-2xl border border-border w-full max-w-sm p-7 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div>
+              <h2 className="font-serif text-xl text-ink mb-1">Delete the novel first</h2>
+              <p className="text-sm text-ink-muted leading-relaxed">
+                <span className="text-ink font-medium">{deleteBlockedProject.title}</span> has a novel in Write.
+                Delete all its chapters and the novel itself before removing this idea.
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setDeleteBlockedProject(null)}
+                className="flex-1 text-sm text-ink-muted border border-border rounded-xl py-2 hover:border-ink transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  const novel = novels.find((n) => n.project_id === deleteBlockedProject.id);
+                  setDeleteBlockedProject(null);
+                  router.push(`/dashboard/write?novel=${novel?.id ?? ""}`);
+                }}
+                className="flex-1 text-sm font-medium bg-ink text-parchment rounded-xl py-2 hover:bg-sage-dark transition-colors"
+              >
+                Go to Write →
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Finalize idea modal */}
+      {finalizeModal && (
+        <div
+          className="fixed inset-0 z-50 bg-ink/40 backdrop-blur-sm flex items-center justify-center px-6"
+          onClick={() => setFinalizeModal(false)}
+        >
+          <div
+            className="bg-parchment rounded-2xl border border-border w-full max-w-sm p-7 space-y-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div>
+              <h2 className="font-serif text-xl text-ink mb-1">Ready to start writing?</h2>
+              <p className="text-sm text-ink-muted leading-relaxed">Give your novel a working title.</p>
+            </div>
+            <input
+              autoFocus
+              value={finalizeTitle}
+              onChange={(e) => setFinalizeTitle(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") handleFinalize(); if (e.key === "Escape") setFinalizeModal(false); }}
+              placeholder="Working title…"
+              className="w-full bg-surface border border-border rounded-xl px-4 py-2.5 text-sm text-ink placeholder:text-ink-muted/50 focus:outline-none focus:border-sage"
+            />
+            <div className="flex gap-3">
+              <button
+                onClick={() => setFinalizeModal(false)}
+                className="flex-1 text-sm text-ink-muted border border-border rounded-xl py-2 hover:border-ink transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleFinalize}
+                disabled={finalizing || !finalizeTitle.trim()}
+                className="flex-1 text-sm font-medium bg-ink text-parchment rounded-xl py-2 disabled:opacity-40 hover:bg-sage-dark transition-colors"
+              >
+                {finalizing ? "Creating…" : "Start writing"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Book detail modal */}
       {selectedBook && (

@@ -59,7 +59,7 @@ interface ResearchResult {
   books: Book[];
 }
 
-const features = [
+const ideateFeatures = [
   {
     title: "Concept Analysis",
     description:
@@ -76,9 +76,32 @@ const features = [
       "Understand how crowded your genre is, how enthusiastic the readership is, and how much room exists for a fresh take.",
   },
   {
-    title: "Recommendations",
+    title: "Comp Pitch & Query Hook",
     description:
-      "Specific, actionable suggestions to differentiate or strengthen your concept before you start writing.",
+      "Walk away with a ready-to-use comp title pitch and a query letter opening paragraph — generated from real market data.",
+  },
+];
+
+const writeFeatures = [
+  {
+    title: "Distraction-free Editor",
+    description:
+      "A clean, focused writing environment with chapter management, drag-to-reorder, and Ctrl+S instant saves.",
+  },
+  {
+    title: "AI Writing Assistant",
+    description:
+      "Get unstuck, check continuity, strengthen a scene, or hear a reader's honest reaction — all in one click.",
+  },
+  {
+    title: "Grammar & Style Check",
+    description:
+      "Highlights spelling and grammar errors inline. Bigger issues — pacing, clarity, voice — flagged separately so you decide what to change.",
+  },
+  {
+    title: "Market-aware Feedback",
+    description:
+      "The AI knows your genre, target audience, and comp titles from your research. Every suggestion is grounded in the book you set out to write.",
   },
 ];
 
@@ -229,7 +252,7 @@ export default function Home() {
               onClick={scrollToTool}
               className="text-sm text-ink-muted hover:text-ink transition-colors"
             >
-              Try Manuscript
+              Try Ideate
             </button>
             <button
               onClick={() => { setAuthMode("signin"); setShowAuthModal(true); }}
@@ -249,19 +272,18 @@ export default function Home() {
               For writers
             </p>
             <h1 className="font-serif text-5xl md:text-6xl text-ink leading-tight mb-6">
-              Know if your book idea is worth writing.
+              Research your idea. Then write it.
             </h1>
             <p className="text-ink-muted text-lg leading-relaxed mb-10 max-w-xl">
-              Manuscript researches the market for your concept before you
-              invest months bringing it to life. Enter your idea, get a
-              confidence score, comparable titles, and recommendations in
-              seconds.
+              Manuscript researches the market for your concept, then gives you
+              a distraction-free editor with AI assistance grounded in that
+              research. Ideate for free — sign in to start writing.
             </p>
             <button
               onClick={scrollToTool}
               className="inline-flex items-center gap-2 bg-ink text-parchment px-7 py-3.5 rounded-full text-sm font-medium hover:bg-sage-dark transition-colors"
             >
-              Try it yourself
+              Try Ideate
               <span>→</span>
             </button>
           </div>
@@ -285,25 +307,98 @@ export default function Home() {
               About
             </p>
             <h2 className="font-serif text-4xl text-ink mb-5">
-              What is Manuscript?
+              From first idea to finished draft.
             </h2>
             <p className="text-ink-muted text-base leading-relaxed">
-              Most writers invest months (sometimes years!) into a concept
-              before discovering the market is oversaturated, or that their idea
-              needs sharper differentiation. Manuscript gives you that signal
-              upfront, so you can write with confidence or refine before you
-              begin.
+              Most writers invest months into a concept before discovering the
+              market is oversaturated, or their idea needs sharper
+              differentiation. Manuscript gives you that signal upfront — then
+              keeps you writing with AI guidance rooted in your own market
+              research.
             </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {features.map((f) => (
-              <div key={f.title} className="p-7 rounded-2xl border border-border bg-parchment">
-                <div className="w-2 h-2 rounded-full bg-sage mb-5" />
-                <h3 className="font-serif text-xl text-ink mb-3">{f.title}</h3>
-                <p className="text-ink-muted text-sm leading-relaxed">{f.description}</p>
+          {/* Ideate features */}
+          <div className="mb-16">
+            <div className="flex items-center justify-between mb-8">
+              <div className="flex items-center gap-4">
+                <p className="text-sage text-sm font-medium uppercase tracking-widest">
+                  01 — Ideate
+                </p>
+                <p className="text-ink-muted text-xs">Free, no account needed</p>
               </div>
-            ))}
+              <button
+                onClick={scrollToTool}
+                className="text-sm text-sage hover:text-sage-dark transition-colors flex items-center gap-1.5"
+              >
+                Try Ideate <span>↓</span>
+              </button>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+              {/* Concept Analysis — large, image top */}
+              <div className="md:col-span-2 rounded-2xl border border-border bg-parchment overflow-hidden">
+                <div className="h-60 relative">
+                  <Image src="/concept-analysis.jpg" alt="Concept Analysis" fill className="object-cover" />
+                </div>
+                <div className="p-7">
+                  <h3 className="font-serif text-xl text-ink mb-2">{ideateFeatures[0].title}</h3>
+                  <p className="text-ink-muted text-sm leading-relaxed">{ideateFeatures[0].description}</p>
+                </div>
+              </div>
+              {/* Market Research — image + text */}
+              <div className="md:col-span-1 rounded-2xl border border-border bg-parchment overflow-hidden">
+                <div className="h-60 relative">
+                  <Image src="/market-research.jpg" alt="Market Research" fill className="object-cover" />
+                </div>
+                <div className="p-7">
+                  <h3 className="font-serif text-xl text-ink mb-2">{ideateFeatures[1].title}</h3>
+                  <p className="text-ink-muted text-sm leading-relaxed">{ideateFeatures[1].description}</p>
+                </div>
+              </div>
+              {/* Market Assessment — image + text */}
+              <div className="md:col-span-1 rounded-2xl border border-border bg-parchment overflow-hidden">
+                <div className="h-60 relative">
+                  <Image src="/market-assessment.jpg" alt="Market Assessment" fill className="object-cover" />
+                </div>
+                <div className="p-7">
+                  <h3 className="font-serif text-xl text-ink mb-2">{ideateFeatures[2].title}</h3>
+                  <p className="text-ink-muted text-sm leading-relaxed">{ideateFeatures[2].description}</p>
+                </div>
+              </div>
+              {/* Comp Pitch — large, image top */}
+              <div className="md:col-span-2 rounded-2xl border border-border bg-parchment overflow-hidden">
+                <div className="h-60 relative">
+                  <Image src="/comp-pitch.jpg" alt="Comp Pitch & Query Hook" fill className="object-cover" />
+                </div>
+                <div className="p-7">
+                  <h3 className="font-serif text-xl text-ink mb-2">{ideateFeatures[3].title}</h3>
+                  <p className="text-ink-muted text-sm leading-relaxed">{ideateFeatures[3].description}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Write features */}
+          <div>
+            <div className="flex items-center gap-4 mb-8">
+              <p className="text-sage text-sm font-medium uppercase tracking-widest">
+                02 — Write
+              </p>
+              <p className="text-ink-muted text-xs">Sign in to unlock</p>
+            </div>
+            <div className="divide-y divide-border border-y border-border">
+              {writeFeatures.map((f, i) => (
+                <div key={f.title} className="flex items-start gap-8 py-8 md:grid md:grid-cols-12">
+                  <span className="font-serif text-4xl text-border shrink-0 md:col-span-1 leading-none">
+                    {String(i + 1).padStart(2, "0")}
+                  </span>
+                  <div className="md:col-span-4">
+                    <h3 className="font-serif text-xl text-ink">{f.title}</h3>
+                  </div>
+                  <p className="md:col-span-7 text-ink-muted text-sm leading-relaxed">{f.description}</p>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </section>
@@ -313,7 +408,7 @@ export default function Home() {
         <div className="max-w-5xl mx-auto">
           <div className="max-w-xl mb-12">
             <p className="text-sage text-sm font-medium uppercase tracking-widest mb-4">
-              Try it yourself
+              Try Ideate
             </p>
             <h2 className="font-serif text-4xl text-ink mb-5">
               Describe your concept.
@@ -522,15 +617,16 @@ export default function Home() {
 
               {/* CTA to sign up */}
               <div className="bg-sage-light border border-sage rounded-2xl p-8 text-center">
-                <p className="font-serif text-2xl text-ink mb-3">Save your research.</p>
-                <p className="text-ink-muted text-sm mb-6 max-w-sm mx-auto">
-                  Create an account to save your analyses, track concept evolution, and revisit your work anytime.
+                <p className="font-serif text-2xl text-ink mb-3">Ready to start writing?</p>
+                <p className="text-ink-muted text-sm mb-2 max-w-sm mx-auto">
+                  Sign in to save this research and continue to the Write phase — a focused editor with an AI assistant that already knows your genre, audience, and comp titles.
                 </p>
+                <p className="text-ink-muted text-xs mb-6">Free to use.</p>
                 <button
                   onClick={() => { setAuthMode("signup"); setShowAuthModal(true); }}
-                  className="inline-flex items-center gap-2 bg-ink text-parchment px-6 py-3 rounded-full text-sm font-medium hover:bg-sage-dark transition-colors"
+                  className="inline-flex items-center gap-2 bg-sage text-parchment px-6 py-3 rounded-full text-sm font-medium hover:bg-sage-dark transition-colors"
                 >
-                  Create free account →
+                  Sign in to start writing →
                 </button>
               </div>
             </div>
@@ -718,10 +814,10 @@ export default function Home() {
             <div className="relative z-10 flex flex-col justify-end w-full px-12 py-10">
               <div>
                 <p className="font-serif italic text-parchment text-2xl leading-snug">
-                  Know if your book idea<br />is worth writing.
+                  Research your idea.<br />Then write it.
                 </p>
                 <p className="text-parchment/60 text-sm mt-3 leading-relaxed max-w-xs">
-                  Research the market before you invest months bringing an idea to life.
+                  Market research and a distraction-free editor, built for fiction writers.
                 </p>
               </div>
             </div>

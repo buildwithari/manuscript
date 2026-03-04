@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import re
 import httpx
 from typing import Optional
 from fastapi import FastAPI, Query, HTTPException, Depends
@@ -71,6 +72,34 @@ class ConceptRequest(BaseModel):
 
 class ProjectRequest(BaseModel):
     title: str
+
+
+class NovelRequest(BaseModel):
+    title: str
+    project_id: Optional[str] = None
+
+
+class NovelUpdateRequest(BaseModel):
+    title: str
+
+
+class ChapterCreateRequest(BaseModel):
+    title: str
+    order: int
+
+
+class ChapterUpdateRequest(BaseModel):
+    title: Optional[str] = None
+    content: Optional[str] = None
+    word_count: Optional[int] = None
+    order: Optional[int] = None
+
+
+class AIAssistRequest(BaseModel):
+    action: str  # "get_unstuck" | "continuity_check" | "strengthen_scene" | "reader_perspective"
+    current_chapter_content: str
+    current_chapter_title: str
+    conversation_history: Optional[list] = None
 
 
 @app.get("/health")
@@ -466,6 +495,8 @@ async def rename_project(project_id: str, body: ProjectRequest, user_id: str = D
     )
     if not response.data:
         raise HTTPException(status_code=404, detail="Project not found")
+    # Sync linked novel title
+    supabase.table("novels").update({"title": body.title}).eq("project_id", project_id).execute()
     return response.data[0]
 
 
@@ -473,3 +504,299 @@ async def rename_project(project_id: str, body: ProjectRequest, user_id: str = D
 async def delete_project(project_id: str, user_id: str = Depends(get_current_user)):
     supabase.table("projects").delete().eq("id", project_id).eq("user_id", user_id).execute()
     return {"ok": True}
+
+
+# --- Novel endpoints ---
+
+@app.post("/novels")
+async def create_novel(body: NovelRequest, user_id: str = Depends(get_current_user)):
+    payload = {"user_id": user_id, "title": body.title}
+    if body.project_id:
+        payload["project_id"] = body.project_id
+    response = supabase.table("novels").insert(payload).execute()
+    novel = response.data[0]
+    # Return with empty chapters list
+    novel["chapters"] = []
+    return novel
+
+
+@app.get("/novels")
+async def list_novels(user_id: str = Depends(get_current_user)):
+    response = (
+        supabase.table("novels")
+        .select("*, chapters(*)")
+        .eq("user_id", user_id)
+        .order("updated_at", desc=True)
+        .execute()
+    )
+    novels = response.data or []
+    # Sort chapters by order within each novel
+    for novel in novels:
+        novel["chapters"] = sorted(novel.get("chapters") or [], key=lambda c: c.get("order", 0))
+    return novels
+
+
+@app.patch("/novels/{novel_id}")
+async def update_novel(novel_id: str, body: NovelUpdateRequest, user_id: str = Depends(get_current_user)):
+    response = (
+        supabase.table("novels")
+        .update({"title": body.title, "updated_at": "now()"})
+        .eq("id", novel_id)
+        .eq("user_id", user_id)
+        .execute()
+    )
+    if not response.data:
+        raise HTTPException(status_code=404, detail="Novel not found")
+    novel = response.data[0]
+    # Sync linked project title
+    if novel.get("project_id"):
+        supabase.table("projects").update({"title": body.title}).eq("id", novel["project_id"]).execute()
+    return novel
+
+
+@app.delete("/novels/{novel_id}")
+async def delete_novel(novel_id: str, user_id: str = Depends(get_current_user)):
+    supabase.table("novels").delete().eq("id", novel_id).eq("user_id", user_id).execute()
+    return {"ok": True}
+
+
+# --- Chapter endpoints ---
+
+@app.post("/novels/{novel_id}/chapters")
+async def create_chapter(novel_id: str, body: ChapterCreateRequest, user_id: str = Depends(get_current_user)):
+    # Verify novel ownership
+    novel = (
+        supabase.table("novels")
+        .select("id")
+        .eq("id", novel_id)
+        .eq("user_id", user_id)
+        .maybe_single()
+        .execute()
+    )
+    if novel.data is None:
+        raise HTTPException(status_code=404, detail="Novel not found")
+    response = supabase.table("chapters").insert({
+        "novel_id": novel_id,
+        "title": body.title,
+        "order": body.order,
+    }).execute()
+    # Bump novel updated_at
+    supabase.table("novels").update({"updated_at": "now()"}).eq("id", novel_id).execute()
+    return response.data[0]
+
+
+@app.patch("/chapters/{chapter_id}")
+async def update_chapter(chapter_id: str, body: ChapterUpdateRequest, user_id: str = Depends(get_current_user)):
+    # Verify ownership via novels join
+    chapter = (
+        supabase.table("chapters")
+        .select("id, novel_id")
+        .eq("id", chapter_id)
+        .maybe_single()
+        .execute()
+    )
+    if chapter.data is None:
+        raise HTTPException(status_code=404, detail="Chapter not found")
+    novel_id = chapter.data["novel_id"]
+    novel = (
+        supabase.table("novels")
+        .select("id")
+        .eq("id", novel_id)
+        .eq("user_id", user_id)
+        .maybe_single()
+        .execute()
+    )
+    if novel.data is None:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    update_data = {"updated_at": "now()"}
+    if body.title is not None:
+        update_data["title"] = body.title
+    if body.content is not None:
+        update_data["content"] = body.content
+    if body.word_count is not None:
+        update_data["word_count"] = body.word_count
+    if body.order is not None:
+        update_data["order"] = body.order
+
+    response = supabase.table("chapters").update(update_data).eq("id", chapter_id).execute()
+    # Bump novel updated_at
+    supabase.table("novels").update({"updated_at": "now()"}).eq("id", novel_id).execute()
+    return response.data[0]
+
+
+@app.delete("/chapters/{chapter_id}")
+async def delete_chapter(chapter_id: str, user_id: str = Depends(get_current_user)):
+    chapter = (
+        supabase.table("chapters")
+        .select("id, novel_id")
+        .eq("id", chapter_id)
+        .maybe_single()
+        .execute()
+    )
+    if chapter.data is None:
+        raise HTTPException(status_code=404, detail="Chapter not found")
+    novel_id = chapter.data["novel_id"]
+    novel = (
+        supabase.table("novels")
+        .select("id")
+        .eq("id", novel_id)
+        .eq("user_id", user_id)
+        .maybe_single()
+        .execute()
+    )
+    if novel.data is None:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    supabase.table("chapters").delete().eq("id", chapter_id).execute()
+    return {"ok": True}
+
+
+# --- AI assist endpoint ---
+
+ACTION_PROMPTS = {
+    "chat": (
+        "Respond helpfully to the writer's message. Use the novel context and current chapter "
+        "to give relevant, specific advice or answers."
+    ),
+    "get_unstuck": (
+        "The writer is stuck. Based on the current chapter content and full novel context, "
+        "suggest 2-3 distinct story directions they could take next. Be specific about plot, "
+        "character action, or scene focus. Keep suggestions under 60 words each."
+    ),
+    "continuity_check": (
+        "Review all chapters for continuity issues: character names, timeline, locations, "
+        "object states, or facts that contradict earlier chapters. List any inconsistencies found "
+        "as bullet points. If none, say so clearly."
+    ),
+    "strengthen_scene": (
+        "Analyse the current chapter for pacing, tension, and voice. Give 3 specific, actionable "
+        "suggestions to make this scene stronger. Reference actual lines or moments from the text."
+    ),
+    "reader_perspective": (
+        "Read the current chapter as a reader in the target audience. Give an honest reaction: "
+        "what's working emotionally, what's confusing, what they'd want to know next. "
+        "Write in first person as that reader."
+    ),
+}
+
+GRAMMAR_CHECK_PROMPT = (
+    "You are a copy editor reviewing a novelist's chapter. "
+    "Return a JSON object with exactly three fields:\n\n"
+    "1. 'corrected_html': The full chapter content as HTML with ONLY clear spelling and grammar errors "
+    "silently fixed. Preserve all HTML tags exactly. Do NOT alter the author's voice, intentional "
+    "sentence fragments, dialect, stylistic punctuation, or creative choices. If nothing needs fixing, "
+    "return the original HTML unchanged.\n\n"
+    "2. 'simple_fixes': An array of objects for every spelling/grammar change made in corrected_html. "
+    "Each object must have:\n"
+    "  - 'original': the exact verbatim word or short phrase as it appears in the original text\n"
+    "  - 'corrected': the fixed version\n"
+    "If no simple fixes were made, return an empty array.\n\n"
+    "3. 'issues': An array of objects for bigger issues that require the author's judgement. "
+    "Each object must have:\n"
+    "  - 'original_text': the exact verbatim text excerpt containing the issue (max 15 words, "
+    "must appear word-for-word in the chapter)\n"
+    "  - 'suggestion': improved replacement for just that excerpt\n"
+    "  - 'explanation': one sentence explaining why this needs attention\n"
+    "  - 'type': one of 'clarity' | 'pacing' | 'consistency' | 'voice' | 'structure'\n\n"
+    "Only flag genuine problems that need author input — not personal style choices. "
+    "If there are no issues, return an empty array."
+)
+
+
+@app.post("/novels/{novel_id}/assist")
+async def ai_assist(novel_id: str, body: AIAssistRequest, user_id: str = Depends(get_current_user)):
+    if body.action not in ACTION_PROMPTS and body.action != "grammar_check":
+        raise HTTPException(status_code=400, detail="Unknown action")
+
+    # Fetch novel + chapters
+    novel_resp = (
+        supabase.table("novels")
+        .select("*, chapters(*)")
+        .eq("id", novel_id)
+        .eq("user_id", user_id)
+        .maybe_single()
+        .execute()
+    )
+    if novel_resp.data is None:
+        raise HTTPException(status_code=404, detail="Novel not found")
+    novel = novel_resp.data
+    chapters = sorted(novel.get("chapters") or [], key=lambda c: c.get("order", 0))
+
+    # Fetch linked project's latest session for market context
+    market_context = ""
+    if novel.get("project_id"):
+        session_resp = (
+            supabase.table("sessions")
+            .select("analysis, confidence")
+            .eq("project_id", novel["project_id"])
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        if session_resp.data:
+            s = session_resp.data[0]
+            analysis = s.get("analysis") or {}
+            confidence = s.get("confidence") or {}
+            market_context = (
+                f"\n\nMarket context from research:\n"
+                f"Genre: {analysis.get('genre')} / {analysis.get('subgenre')}\n"
+                f"Themes: {', '.join(analysis.get('themes', []))}\n"
+                f"Target audience: {analysis.get('target_audience')}\n"
+                f"Comp pitch: {confidence.get('comp_pitch', 'N/A')}\n"
+                f"Recommendations: {'; '.join(confidence.get('recommendations', []))}"
+            )
+
+    # Build chapter summary
+    chapter_summaries = []
+    for ch in chapters:
+        # Strip HTML tags for word extraction (rough)
+        text = re.sub(r"<[^>]+>", "", ch.get("content", ""))
+        snippet = text[:300].strip()
+        chapter_summaries.append(
+            f"Chapter {ch['order'] + 1}: {ch['title']} ({ch['word_count']} words)\n{snippet}{'...' if len(text) > 300 else ''}"
+        )
+
+    chapters_text = "\n\n".join(chapter_summaries) if chapter_summaries else "No chapters written yet."
+
+    # Strip HTML from current chapter for AI (prose actions only)
+    current_text = re.sub(r"<[^>]+>", "", body.current_chapter_content)
+
+    # --- Grammar check: special JSON path ---
+    if body.action == "grammar_check":
+        grammar_system = (
+            f"You are a copy editor reviewing a chapter from the novel '{novel['title']}'.\n\n"
+            f"Current chapter: '{body.current_chapter_title}'\n"
+            f"Chapter HTML content:\n{body.current_chapter_content}\n\n"
+            f"{GRAMMAR_CHECK_PROMPT}"
+        )
+        grammar_response = await openai_client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": grammar_system},
+                {"role": "user", "content": "Please review this chapter now."},
+            ],
+            response_format={"type": "json_object"},
+        )
+        return {"grammar_result": json.loads(grammar_response.choices[0].message.content)}
+
+    # --- All other actions: prose response ---
+    system_prompt = (
+        f"You are a skilled writing assistant helping a novelist. "
+        f"The novel is titled '{novel['title']}'.{market_context}\n\n"
+        f"Full novel so far (chapter summaries):\n{chapters_text}\n\n"
+        f"Current chapter being worked on: '{body.current_chapter_title}'\n"
+        f"Current chapter content:\n{current_text}\n\n"
+        f"Task: {ACTION_PROMPTS[body.action]}\n\n"
+        f"Respond in plain prose only. Do not use markdown formatting, bullet points, bold, italics, or headers."
+    )
+
+    messages = [{"role": "system", "content": system_prompt}]
+    if body.conversation_history:
+        messages.extend(body.conversation_history)
+    messages.append({"role": "user", "content": ACTION_PROMPTS[body.action]})
+
+    response = await openai_client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=messages,
+    )
+    return {"response": response.choices[0].message.content}
